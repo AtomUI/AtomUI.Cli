@@ -72,11 +72,14 @@ public sealed record ListItemDto(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_ARG002` | `kind`、`--since` 非法。 |
 | `ATOMUICLI_PKG001` | `--product` 不存在。 |
 | `ATOMUICLI_DATA001` | 目标版本快照不可用。 |
+| `ATOMUICLI_DATA002` | schema 版本不兼容。 |
 
 ## 测试
 
@@ -85,4 +88,3 @@ public sealed record ListItemDto(
 - `--since` 使用语义版本比较。
 - `--include-hidden` 只影响隐藏条目，不影响商业私有字段。
 - JSON 字段顺序和排序稳定。
-

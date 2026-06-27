@@ -74,6 +74,8 @@ json 输出以 section 数组表达，便于 Agent 按需截取上下文。
 
 ## 错误码与退出码
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | `--section` 非法。 |

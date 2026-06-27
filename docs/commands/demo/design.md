@@ -67,12 +67,15 @@ public sealed record DemoDto(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_ARG001` | 缺少控件名。 |
 | `ATOMUICLI_ARG002` | language 非法。 |
 | `ATOMUICLI_CTRL001` | 控件不存在。 |
 | `ATOMUICLI_CTRL003` | demo 不存在。 |
+| `ATOMUICLI_DATA001` | 示例数据不可用。 |
 
 ## 测试
 
@@ -81,4 +84,3 @@ public sealed record DemoDto(
 - demo 名大小写不敏感。
 - `--strict` 禁止候选 fallback。
 - 示例内容保持构建期提取的原始缩进。
-

@@ -49,7 +49,7 @@ json 输出示例：
   },
   "diagnostics": [
     {
-      "code": "ATOMUICLI_PKG001",
+      "code": "ATOMUICLI_PKG003",
       "severity": "error",
       "message": "The project references conflicting AtomUI packages.",
       "file": "App.csproj",
@@ -83,13 +83,16 @@ json 输出示例：
 
 ## 错误码与退出码
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | severity 或 rule 参数非法。 |
 | `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
 | `ATOMUICLI_PRJ002` | `4` | 项目文件无法读取。 |
 | `ATOMUICLI_DATA001` | `4` | 诊断所需 metadata 不可用。 |
-| `ATOMUICLI_PKG001` | `5` | 包冲突或兼容性 error。 |
+| `ATOMUICLI_PKG003` | `5` | 包冲突或兼容性 error。 |
+| `ATOMUICLI_PRJ010` | `5` | 项目结构或 XAML finding 达到失败阈值。 |
 | `ATOMUICLI_AOT001` | `5` | AOT 相关 error。 |
 
 ## AOT 约束
@@ -106,4 +109,3 @@ json 输出示例：
 - `--severity warning` 过滤 info。
 - `--fail-on-warning` 在 warning 时返回 `5`。
 - `--no-usage-scan` 不读取 XAML/C# 文件。
-

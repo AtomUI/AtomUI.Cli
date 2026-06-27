@@ -59,9 +59,9 @@ public interface ICommercialVisibilityPolicy
 | --- | --- |
 | 未配置数据根 | 提示 `--data-root` 和可公开包级信息。 |
 | 数据根不存在 | 输出路径和 `ATOMUICLI_DATA001`。 |
-| schema 不兼容 | 输出当前 schema 和期望 schema。 |
-| 版本不匹配 | 输出可用版本和目标版本。 |
-| 授权失败 | 输出授权状态，不泄露私有内容。 |
+| schema 不兼容 | 输出当前 schema、期望 schema 和 `ATOMUICLI_DATA003`。 |
+| 版本不匹配 | 输出可用版本、目标版本和 `ATOMUICLI_DATA004`。 |
+| 授权失败 | 输出授权状态和 `ATOMUICLI_DATA005`，不泄露私有内容。 |
 
 ## 与公开命令的关系
 
@@ -94,4 +94,3 @@ public interface ICommercialVisibilityPolicy
 | `CommercialCommandIntegrationTests` | list/info/package 的降级输出。 |
 
 fixture 必须使用虚构商业产品和虚构控件名，不包含真实私有 API。
-

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>AtomUI.Cli.Modularity</AssemblyName>
+    <RootNamespace>AtomUI.Cli.Modularity</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AtomUIModularityCatalogNamespace>AtomUI.Cli.Modularity.Generated</AtomUIModularityCatalogNamespace>
+    <AtomUIModularityCatalogTypeName>AtomUICliModuleGeneratedCatalog</AtomUIModularityCatalogTypeName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
+    <PackageReference Include="AtomUI.Base" />
+    <PackageReference Include="AtomUI.Base.Generator" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

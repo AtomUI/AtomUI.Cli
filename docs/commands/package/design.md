@@ -53,6 +53,8 @@ public sealed record PackageCommandPayload(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_PKG001` | 包或产品不存在。 |

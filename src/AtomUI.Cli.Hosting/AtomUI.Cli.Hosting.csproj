@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>AtomUI.Cli.Hosting</AssemblyName>
+    <RootNamespace>AtomUI.Cli.Hosting</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
+    <ProjectReference Include="../AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

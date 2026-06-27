@@ -82,9 +82,11 @@ json 输出示例：
 
 ## 错误码与退出码
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
-| `ATOMUICLI_ARG001` | `2` | 输入路径格式非法。 |
+| `ATOMUICLI_ARG002` | `2` | 输入路径格式非法。 |
 | `ATOMUICLI_PRJ001` | `3` | 未找到项目或解决方案。 |
 | `ATOMUICLI_PRJ002` | `4` | 项目文件无法读取或 XML 非法。 |
 
@@ -101,4 +103,3 @@ json 输出示例：
 - `--detail` 包含 publish/AOT 属性。
 - 输入路径不存在时返回 `ATOMUICLI_PRJ001`。
 - json 输出不包含机器相关临时路径，除非字段明确为项目路径。
-

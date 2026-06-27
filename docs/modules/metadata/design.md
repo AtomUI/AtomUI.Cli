@@ -103,7 +103,7 @@ public interface IControlQueryService
 - `Found`
 - `NotFound`，包含候选建议。
 - `Ambiguous`，包含候选列表。
-- `DataUnavailable`，包含数据根和 schema 错误。
+- `DataUnavailable`，包含数据根、schema、版本索引或授权错误，并映射为 [错误码标准](../../commands/error-code-standard.md) 中的 `ATOMUICLI_DATA001` 至 `ATOMUICLI_DATA005`。
 
 命令 handler 负责把 result object 映射为 `AtomUICliResult`。
 

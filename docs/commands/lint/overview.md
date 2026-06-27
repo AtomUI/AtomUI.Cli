@@ -82,11 +82,14 @@ json 输出示例：
 
 ## 错误码与退出码
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | category、severity 或 fix-plan 格式非法。 |
 | `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
 | `ATOMUICLI_PRJ003` | `4` | 源文件读取失败。 |
+| `ATOMUICLI_PRJ010` | `5` | 项目结构或 XAML finding 达到失败阈值。 |
 | `ATOMUICLI_AOT001` | `5` | AOT 类 lint error。 |
 
 ## AOT 约束
@@ -102,4 +105,3 @@ json 输出示例：
 - lint error 返回退出码 `5`。
 - `lint` 不写用户项目文件。
 - 废弃 API 规则能定位文件和行号。
-

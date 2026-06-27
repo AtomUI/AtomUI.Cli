@@ -25,6 +25,7 @@
 | `IAtomUICliCommandHandler<TOptions>` | interface | 命令 handler 契约。 |
 | `AtomUICliResult` | readonly record struct | 成功、业务失败、诊断失败和取消结果。 |
 | `AtomUICliError` | readonly record struct | 错误码、消息、建议、文件位置和 inner category。 |
+| `IErrorCodeCatalog` | interface | 错误码注册表，提供 code、domain、类型和退出码元数据。 |
 
 ## 命令调度契约
 
@@ -55,6 +56,7 @@ public interface IAtomUICliCommandHandler<in TOptions>
 | --- | --- |
 | `IOutputWriter` | 只写 stdout，负责 text/json/markdown 输出。 |
 | `IErrorWriter` | 只写 stderr，负责错误、参数提示和诊断摘要。 |
+| `IErrorCodeCatalog` | 错误码标准的运行时只读 catalog。 |
 | `IJsonOutputSerializer` | 统一使用 source generated `JsonSerializerContext`。 |
 | `IMarkdownWriter` | 提供 heading、table、code block 等稳定格式。 |
 
@@ -67,19 +69,31 @@ public interface IAtomUICliCommandHandler<in TOptions>
 
 ## 错误与退出码
 
-错误码前缀和退出码映射集中在 `IExitCodeMapper`：
+错误码、诊断码和退出码遵守 [AtomUI Cli 错误码标准](../../commands/error-code-standard.md)。错误码到退出码不能只按前缀粗略判断，必须以注册表中的具体 code 为准。
 
-| 错误前缀 | 默认退出码 |
+例如：
+
+- `ATOMUICLI_PKG001` 表示包或产品不存在，默认退出码为 `3`。
+- `ATOMUICLI_PKG003` 表示包冲突或兼容性诊断，失败阈值命中时退出码为 `5`。
+
+`IExitCodeMapper` 处理三类输入：
+
+| 输入 | 映射规则 |
 | --- | --- |
-| `ATOMUICLI_ARG` | `2` |
-| `ATOMUICLI_CTRL` | `3` |
-| `ATOMUICLI_PKG` | `3` 或 `5` |
-| `ATOMUICLI_DATA` | `4` |
-| `ATOMUICLI_PRJ` | `3` 或 `4` |
-| `ATOMUICLI_AOT` | `5` |
-| `ATOMUICLI_MCP` | `1` |
-| `ATOMUICLI_SETUP` | `6` |
-| `ATOMUICLI_MOD` | `1` |
+| 成功结果 | 返回 `0`。 |
+| `AtomUICliError` | 按 `IErrorCodeCatalog` 中的具体错误码映射。 |
+| 诊断 payload | 存在 error 或 `--fail-on-warning` 命中时返回 `5`，否则返回 `0`。 |
+
+默认退出码摘要：
+
+| 退出码 | 场景 |
+| --- | --- |
+| `1` | 未分类异常、模块失败、MCP 运行时失败、取消。 |
+| `2` | 参数错误或命令不存在。 |
+| `3` | 查询目标不存在或存在歧义。 |
+| `4` | 数据不可用、schema 不兼容、项目文件或源码无法读取。 |
+| `5` | 项目诊断、包冲突、AOT 或 lint finding 达到失败阈值。 |
+| `6` | 写入计划冲突、配置读取失败或文件写入失败。 |
 
 模块初始化阶段抛出的异常必须先转为 `AtomUICliError`，再进入统一退出码映射。
 
@@ -124,7 +138,6 @@ Dispose
 | `CliCommandDispatcherTests` | scope 创建、handler 解析、取消传播。 |
 | `CliCommandParserTests` | 全局选项、未知命令、help/version。 |
 | `OutputWriterTests` | stdout/stderr 分离和格式稳定性。 |
-| `ExitCodeMapperTests` | 错误码到退出码映射。 |
+| `ExitCodeMapperTests` | error code catalog 映射、硬错误退出码和诊断 severity 聚合。 |
 
 测试夹具应使用 fake module 和 fake handler，不依赖 metadata 快照。
-

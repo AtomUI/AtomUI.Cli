@@ -72,12 +72,15 @@ public sealed record InfoCommandPayload(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_ARG001` | 缺少控件名。 |
 | `ATOMUICLI_ARG002` | include 项非法。 |
 | `ATOMUICLI_CTRL001` | 控件不存在。 |
 | `ATOMUICLI_CTRL002` | 控件名歧义。 |
+| `ATOMUICLI_DATA001` | 元数据快照不可用。 |
 
 ## 测试
 
@@ -86,4 +89,3 @@ public sealed record InfoCommandPayload(
 - `--include tokens,semantic` 只加载对应服务。
 - 控件不存在时返回候选建议。
 - JSON 输出不包含商业不可见字段。
-

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>AtomUI.Cli.Tests</AssemblyName>
+    <RootNamespace>AtomUI.Cli.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
+    <ProjectReference Include="../../src/AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
+    <ProjectReference Include="../../src/AtomUI.Cli.Hosting/AtomUI.Cli.Hosting.csproj" />
+    <ProjectReference Include="../../src/AtomUI.Cli/AtomUI.Cli.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+</Project>

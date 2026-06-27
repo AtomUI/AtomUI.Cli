@@ -26,6 +26,7 @@ public sealed partial class AtomUICliCoreModule : AtomUICliModule
 | `ICliCommandDispatcher` | Singleton | 创建 command scope 并调用 handler。 |
 | `IOutputWriter` | Scoped | stdout 输出，支持 text/json/markdown。 |
 | `IErrorWriter` | Scoped | stderr 错误输出。 |
+| `IErrorCodeCatalog` | Singleton | [错误码标准](../../commands/error-code-standard.md) 的运行时注册表。 |
 | `IExitCodeMapper` | Singleton | `AtomUICliResult` 到退出码映射。 |
 | `IJsonOutputSerializer` | Singleton | AOT-friendly JSON 输出。 |
 | `ICliDiagnosticSink` | Scoped | 命令级诊断收集。 |
@@ -58,4 +59,4 @@ public sealed partial class AtomUICliCoreModule : AtomUICliModule
 - 命令 scope 创建和释放。
 - stdout/stderr 分离。
 - text/json/markdown 输出稳定性。
-- 错误码到退出码映射。
+- 错误码 catalog 与退出码映射。

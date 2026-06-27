@@ -51,6 +51,7 @@ public sealed partial class AtomUICliCommercialDataModule : AtomUICliModule
 ## 测试
 
 - 未配置商业数据根时的降级输出。
-- 商业快照 schema 不兼容错误。
+- 商业快照 schema 不兼容错误返回 `ATOMUICLI_DATA003`。
+- 商业数据授权失败返回 `ATOMUICLI_DATA005`。
 - 商业包替代关系和冲突诊断。
 - 公开快照不包含商业私有字段。

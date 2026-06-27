@@ -154,12 +154,14 @@ public sealed record MigrateCommandPayload(
 
 ## 错误处理
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。下表只列项目分析类命令可能返回的错误码子集；诊断 finding 的退出码由 severity 聚合。
+
 | 场景 | 错误码 |
 | --- | --- |
 | path 不存在 | `ATOMUICLI_PRJ001` |
 | XML 读取失败 | `ATOMUICLI_PRJ002` |
 | 源码读取失败 | `ATOMUICLI_PRJ003` |
-| 诊断 error | 具体 `ATOMUICLI_PKG`、`ATOMUICLI_AOT`、`ATOMUICLI_PRJ` |
+| 诊断 error | 按注册表选择具体 finding code，例如 `ATOMUICLI_PKG003`、`ATOMUICLI_AOT001`、`ATOMUICLI_PRJ010` |
 | 版本范围非法 | `ATOMUICLI_ARG002` |
 | 版本索引缺失 | `ATOMUICLI_DATA004` |
 
@@ -180,4 +182,3 @@ public sealed record MigrateCommandPayload(
 | `usage` | XAML/C# 控件识别、group-by、locations。 |
 | `lint` | category filter、fix plan、只读保证。 |
 | `migrate` | from/to 解析、diff、项目相关裁剪。 |
-

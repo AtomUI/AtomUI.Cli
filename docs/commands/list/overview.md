@@ -84,9 +84,11 @@ markdown 输出用于文档生成，按分类分组。
 
 ## 错误码与退出码
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
-| `ATOMUICLI_ARG001` | `2` | `kind` 非法。 |
+| `ATOMUICLI_ARG002` | `2` | `kind` 非法。 |
 | `ATOMUICLI_DATA001` | `4` | 元数据快照不可用。 |
 | `ATOMUICLI_DATA002` | `4` | schema 版本不兼容。 |
 | `ATOMUICLI_PKG001` | `3` | 指定产品不存在。 |
@@ -104,4 +106,3 @@ markdown 输出用于文档生成，按分类分组。
 - `--since` 只返回目标版本范围内的条目。
 - json 输出字段和排序稳定。
 - 快照缺失时返回 `ATOMUICLI_DATA001`。
-

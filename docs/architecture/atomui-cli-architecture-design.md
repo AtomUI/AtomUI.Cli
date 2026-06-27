@@ -608,7 +608,7 @@ DI 生命周期：
 - Host defaults 必须最小化，只启用明确需要的 configuration、logging 和 lifetime provider。
 - CLI 只读命令不能因 Host 初始化访问网络。
 - `CancellationToken` 从 Host lifetime、Ctrl+C、命令 scope 和 MCP request context 统一传播。
-- 模块初始化失败必须转换为 `ATOMUICLI_MOD` 错误码并阻止进入命令执行。
+- 模块初始化失败必须转换为 `ATOMUICLI_MOD001` 或 `ATOMUICLI_MOD002` 并阻止进入命令执行。
 
 ### 8.5 AOT-first 运行时约束
 
@@ -874,7 +874,7 @@ output/data/v6.0.6.json.gz
   },
   "diagnostics": [
     {
-      "code": "ATOMUICLI_PKG001",
+      "code": "ATOMUICLI_PKG003",
       "severity": "error",
       "message": "The project references packages that are declared as conflicting in the AtomUI product catalog.",
       "file": "App.csproj",
@@ -911,10 +911,19 @@ Skill 模板要求 Agent：
 
 ## 14. 错误码与退出码
 
-错误码前缀：
+错误码、诊断码、退出码、stdout/stderr 边界和 JSON 错误 envelope 统一遵守 [AtomUI Cli 错误码标准](../commands/error-code-standard.md)。`AtomUICliApplication` 和命令 handler 不直接返回进程退出码，退出码只由 `IExitCodeMapper` 根据 `AtomUICliResult`、错误码和诊断 severity 聚合计算。
+
+错误码格式：
+
+```text
+ATOMUICLI_<DOMAIN><NNN>
+```
+
+已登记 domain：
 
 | 前缀 | 范围 |
 | --- | --- |
+| `ATOMUICLI_SYS` | 未分类异常、取消、运行时兜底错误。 |
 | `ATOMUICLI_ARG` | 参数和命令错误。 |
 | `ATOMUICLI_MOD` | 模块解析、模块生命周期、模块 contribution 错误。 |
 | `ATOMUICLI_DATA` | 元数据加载、schema、数据根错误。 |
@@ -925,17 +934,17 @@ Skill 模板要求 Agent：
 | `ATOMUICLI_MCP` | MCP transport 或 tool 错误。 |
 | `ATOMUICLI_SETUP` | setup 写入错误。 |
 
-退出码：
+退出码摘要：
 
 | 退出码 | 说明 |
 | --- | --- |
 | `0` | 成功。 |
-| `1` | 未分类错误。 |
-| `2` | 参数错误。 |
-| `3` | 查询目标不存在。 |
-| `4` | 数据不可用或 schema 不兼容。 |
-| `5` | 项目诊断发现 error。 |
-| `6` | 写入操作失败。 |
+| `1` | 未分类异常、模块失败、MCP 运行时失败、取消。 |
+| `2` | 参数错误或命令不存在。 |
+| `3` | 查询目标不存在或存在歧义。 |
+| `4` | 数据不可用、schema 不兼容、项目文件或源码无法读取。 |
+| `5` | 项目诊断、包冲突、AOT 或 lint finding 达到失败阈值。 |
+| `6` | 写入计划冲突、配置读取失败或文件写入失败。 |
 
 ## 15. 打包与发布
 
@@ -1038,7 +1047,7 @@ Host/DI 测试要求：
 - MCP 每次 tool invocation 都创建独立 scope。
 - 只读命令的 Host 初始化不会访问网络。
 - 业务服务不接收 `IServiceProvider`。
-- 模块生命周期失败会返回 `ATOMUICLI_MOD` 前缀错误码。
+- 模块生命周期失败会返回 `ATOMUICLI_MOD001` 或 `ATOMUICLI_MOD002`。
 
 ### 16.2 快照测试
 

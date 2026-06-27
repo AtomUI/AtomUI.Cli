@@ -52,9 +52,11 @@ public sealed record EnvCommandPayload(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
-| `ATOMUICLI_ARG001` | path 格式非法。 |
+| `ATOMUICLI_ARG002` | path 格式非法。 |
 | `ATOMUICLI_PRJ001` | 未找到项目。 |
 | `ATOMUICLI_PRJ002` | 项目 XML 无法读取。 |
 
@@ -65,4 +67,3 @@ public sealed record EnvCommandPayload(
 - Central Package Management 版本解析正确。
 - `--detail` 通过全局 detail 输出 publish/AOT 属性。
 - 不访问网络和外部命令。
-

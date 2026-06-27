@@ -86,6 +86,23 @@ public sealed record AtomUICliResult(
 
 payload 必须是已登记到 JSON source generation context 的 DTO。
 
+错误码和诊断码遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。`AtomUICliError` 用于命令无法继续执行的硬错误；`AtomUICliDiagnostic` 用于 `doctor`、`lint`、`usage` 等命令的 finding。两者共用同一错误码 catalog，但退出码计算不同：硬错误按具体 code 映射，诊断 payload 按 severity 聚合。
+
+`AtomUICliError` 最小字段：
+
+```csharp
+public sealed record AtomUICliError(
+    string Code,
+    AtomUICliSeverity Severity,
+    string Message,
+    string? Suggestion,
+    string Stage,
+    CliLocation? Location,
+    IReadOnlyDictionary<string, string> Details);
+```
+
+handler 不创建未登记错误码，也不直接设置进程退出码。
+
 ## Handler 生命周期
 
 ```text
@@ -124,6 +141,18 @@ JSON 输出需要包含：
 - 命令 payload。
 - warnings。
 
+硬错误输出规则：
+
+- stdout 保持为空。
+- stderr 输出错误摘要。
+- `--format json` 时，stderr 输出错误 envelope，字段以 [错误码标准](error-code-standard.md) 为准。
+
+诊断命令输出规则：
+
+- 命令成功完成扫描时，stdout 输出 payload 和 diagnostics/findings。
+- 存在 error 级 finding 或 `--fail-on-warning` 命中时，退出码返回 `5`。
+- 扫描前置条件失败，例如项目文件无法读取，返回 `AtomUICliError` 并按错误码映射退出码。
+
 ## Update Check
 
 更新检查是 Host 级可选 post action：
@@ -141,5 +170,5 @@ JSON 输出需要包含：
 | `CommandParserTests` | 全局选项、子命令参数、非法格式。 |
 | `CommandDispatcherTests` | scope、handler 生命周期、取消传播。 |
 | `CommandOutputTests` | text/json/markdown 格式稳定。 |
+| `CommandErrorContractTests` | 所有命令声明的错误码都存在于 error code catalog。 |
 | `CommandAotTests` | JSON context 覆盖所有 payload DTO。 |
-

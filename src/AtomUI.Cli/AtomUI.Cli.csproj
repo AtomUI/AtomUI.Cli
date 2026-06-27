@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>AtomUI.Cli</AssemblyName>
+    <RootNamespace>AtomUI.Cli.Entry</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>dotnet-atomui</ToolCommandName>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AtomUI.Cli.Hosting/AtomUI.Cli.Hosting.csproj" />
+  </ItemGroup>
+</Project>

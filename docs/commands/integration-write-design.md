@@ -155,16 +155,22 @@ public sealed record WriteCommandPayload(
 
 ## 错误处理
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。下表只列 MCP 和写入类命令可能返回的错误码子集。
+
 | 场景 | 错误码 |
 | --- | --- |
 | target/scope 非法 | `ATOMUICLI_ARG002` |
 | 项目不存在 | `ATOMUICLI_PRJ001` |
 | 包或产品不存在 | `ATOMUICLI_PKG001` |
 | 包冲突 | `ATOMUICLI_PKG003` |
+| metadata 不可用 | `ATOMUICLI_DATA001` |
+| 版本索引缺失 | `ATOMUICLI_DATA004` |
+| 配置读取失败 | `ATOMUICLI_SETUP001` |
 | 写入冲突 | `ATOMUICLI_SETUP002` |
 | 写入失败 | `ATOMUICLI_SETUP003` |
 | MCP request 非法 | `ATOMUICLI_MCP001` |
 | MCP tool 不存在 | `ATOMUICLI_MCP002` |
+| MCP tool invocation 失败 | `ATOMUICLI_MCP003` |
 
 ## AOT-first 要求
 
@@ -183,4 +189,3 @@ public sealed record WriteCommandPayload(
 | `init` | 已满足项、冲突、sample plan。 |
 | `add` | 产品解析、包冲突、注册计划。 |
 | `upgrade` | CLI 建议、包版本写入、迁移提示。 |
-

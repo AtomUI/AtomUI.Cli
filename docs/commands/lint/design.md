@@ -68,11 +68,14 @@ fix plan 不包含自动 patch，不写文件。
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_ARG002` | category、severity 或 fix-plan 非法。 |
 | `ATOMUICLI_PRJ001` | 未找到项目。 |
 | `ATOMUICLI_PRJ003` | 源码读取失败。 |
+| `ATOMUICLI_PRJ010` | XAML namespace、控件使用或项目结构 lint finding。 |
 | `ATOMUICLI_AOT001` | AOT 类 lint error。 |
 
 ## 测试
@@ -82,4 +85,3 @@ fix plan 不包含自动 patch，不写文件。
 - lint error 返回退出码 `5`。
 - 命令不写用户项目。
 - 废弃 API finding 包含文件和行号。
-

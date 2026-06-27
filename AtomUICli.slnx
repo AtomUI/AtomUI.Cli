@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
+  <Project Path="src/AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
+  <Project Path="src/AtomUI.Cli.Hosting/AtomUI.Cli.Hosting.csproj" />
+  <Project Path="src/AtomUI.Cli/AtomUI.Cli.csproj" />
+  <Project Path="tests/AtomUI.Cli.Tests/AtomUI.Cli.Tests.csproj" />
+</Solution>

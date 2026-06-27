@@ -56,13 +56,16 @@ public sealed record DoctorCommandPayload(
 
 ## 错误
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `ATOMUICLI_ARG002` | severity 或 rule 非法。 |
 | `ATOMUICLI_PRJ001` | 未找到项目。 |
 | `ATOMUICLI_PRJ002` | 项目文件无法读取。 |
 | `ATOMUICLI_DATA001` | metadata 不可用。 |
-| `ATOMUICLI_PKG001` | 包诊断 error。 |
+| `ATOMUICLI_PKG003` | 包冲突或兼容性 error。 |
+| `ATOMUICLI_PRJ010` | 项目结构或 XAML 诊断 error。 |
 | `ATOMUICLI_AOT001` | AOT 诊断 error。 |
 
 ## 测试
@@ -72,4 +75,3 @@ public sealed record DoctorCommandPayload(
 - `--rule` 只执行指定规则。
 - `--no-usage-scan` 不读取 XAML/C#。
 - `--fail-on-warning` 将 warning 映射为失败。
-

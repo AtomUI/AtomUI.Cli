@@ -84,6 +84,8 @@ request/response DTO 必须和 CLI JSON 输出保持字段语义一致，但可�
 
 错误映射：
 
+CLI 错误码来源遵守 [AtomUI Cli 错误码标准](../../commands/error-code-standard.md)。MCP 层只负责把 `AtomUICliError` 映射到 JSON-RPC error code，不创建新的错误语义。
+
 | CLI 错误 | JSON-RPC error code |
 | --- | --- |
 | 参数错误 | `-32602` |
@@ -124,4 +126,3 @@ context.Tools.Add<AtomUIInfoToolRequest, AtomUIInfoToolResponse, AtomUIInfoToolH
 | `McpStdioServerTests` | EOF、取消和 malformed request。 |
 
 测试应使用内存 stream 代替真实 stdin/stdout。
-

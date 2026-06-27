@@ -1,0 +1,12 @@
+bin/
+obj/
+output/
+.idea/
+.vs/
+*.user
+*.suo
+TestResults/
+src/**/bin/
+src/**/obj/
+tests/**/bin/
+tests/**/obj/

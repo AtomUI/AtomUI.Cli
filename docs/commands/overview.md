@@ -59,27 +59,31 @@ context.Commands.Add<ListCommandOptions, ListCommandHandler>("list");
 - 业务逻辑放在 metadata、project analysis、setup 或 MCP 服务中，handler 只做参数校验、调用服务、映射输出。
 - stdout 只输出命令结果，stderr 只输出错误和诊断。
 - JSON 输出必须使用 source generated `JsonSerializerContext`。
+- 错误码、诊断码和退出码必须遵守 [error-code-standard](error-code-standard.md)，命令文档只能列本命令使用的已登记错误码子集。
 
 详细设计：
 
 | 文档 | 说明 |
 | --- | --- |
 | [runtime-design](runtime-design.md) | 命令 catalog、options、handler、输出、退出码和 AOT 约束。 |
+| [error-code-standard](error-code-standard.md) | 统一错误码、诊断码、退出码、stderr/stdout 和命令文档规范。 |
 | [knowledge-query-design](knowledge-query-design.md) | 知识查询类命令的 DTO、服务依赖和测试矩阵。 |
 | [project-analysis-design](project-analysis-design.md) | 项目分析类命令的项目上下文、扫描和诊断设计。 |
 | [integration-write-design](integration-write-design.md) | MCP、setup、init、add、upgrade 的集成和写入设计。 |
 
 ## 退出码约定
 
+所有命令遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。命令 handler 只返回 `AtomUICliResult`，退出码由 `IExitCodeMapper` 统一计算。
+
 | 退出码 | 场景 |
 | --- | --- |
 | `0` | 成功。 |
-| `1` | 未分类错误。 |
+| `1` | 未分类异常、模块失败、MCP 运行时失败、取消。 |
 | `2` | 参数错误或命令不存在。 |
-| `3` | 查询目标不存在。 |
-| `4` | 数据不可用、schema 不兼容或数据根错误。 |
-| `5` | 项目诊断发现 error。 |
-| `6` | 写入操作失败。 |
+| `3` | 查询目标不存在或存在歧义。 |
+| `4` | 数据不可用、schema 不兼容、项目文件或源码无法读取。 |
+| `5` | 项目诊断、包冲突、AOT 或 lint finding 达到失败阈值。 |
+| `6` | 写入计划冲突、配置读取失败或文件写入失败。 |
 
 ## AOT-first 约束
 

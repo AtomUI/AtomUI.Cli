@@ -149,6 +149,8 @@ public sealed record ChangelogCommandPayload(
 
 ## 错误处理
 
+错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。下表只列知识查询类命令可能返回的错误码子集。
+
 | 场景 | 错误码 |
 | --- | --- |
 | 命令参数非法 | `ATOMUICLI_ARG002` |
@@ -158,8 +160,11 @@ public sealed record ChangelogCommandPayload(
 | Token 不存在 | `ATOMUICLI_CTRL004` |
 | semantic part 不存在 | `ATOMUICLI_CTRL005` |
 | 包不存在 | `ATOMUICLI_PKG001` |
+| 包 ID 歧义 | `ATOMUICLI_PKG002` |
 | metadata 不可用 | `ATOMUICLI_DATA001` |
 | schema 不兼容 | `ATOMUICLI_DATA002` |
+| 外部数据 schema 不兼容 | `ATOMUICLI_DATA003` |
+| 版本索引缺失 | `ATOMUICLI_DATA004` |
 
 失败结果必须包含候选建议，候选建议使用 metadata index 计算，不访问网络。
 
@@ -183,4 +188,3 @@ public sealed record ChangelogCommandPayload(
 | `design.md` | major version 文档选择。 |
 | `package` | 依赖、冲突、注册方法。 |
 | `changelog` | range query、diff mode、control/package filter。 |
-
