@@ -9,5 +9,13 @@
     <WarningsAsErrors>Nullable</WarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <Description>AtomUI ecosystem command-line tool for metadata lookup, project diagnostics, setup automation, migration assistance, and MCP integrations.</Description>
+    <PackageTags>AtomUI;CLI;dotnet-tool;MCP</PackageTags>
+    <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
 </Project>
