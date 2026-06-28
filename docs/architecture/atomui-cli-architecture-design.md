@@ -1,392 +1,280 @@
 # AtomUI Cli 架构设计文档
 
-## 1. 背景
+## 1. 文档定位
 
-AtomUI Cli 是面向 AtomUI 生态的 .NET Tool，通过 NuGet 分发。用户安装后以 `dotnet atomui ...` 形式调用，用来查询 AtomUI 控件知识、分析项目使用情况、辅助迁移、生成 Agent 可消费的结构化信息，并为 MCP/Skill 集成提供稳定入口。
+本文档描述 AtomUI Cli 的整体功能架构：它解决什么问题、由哪些能力模块组成、模块之间如何协作、运行时如何管理命令和模块生命周期，以及数据、错误、MCP 和写入能力的边界。
 
-AtomUI Cli 不是应用脚手架，也不是运行时库。它的核心职责是把 AtomUI 生态的包信息、控件 API、Token、文档、示例、变更记录和项目诊断能力整理为本地、稳定、可脚本化的命令行能力。
+本文档不描述仓库目录、构建文件拆分、发布流水线或工程执行清单。这些内容属于工程实施计划，放在 `docs/superpowers/plans/` 下维护。
 
-## 2. 设计目标
+## 2. 产品定位
 
-- 通过 NuGet Tool 分发，安装后支持 `dotnet atomui` 子命令调用。
-- 提供离线知识查询能力：控件列表、API、文档、Demo、Token、semantic parts、设计文档、包信息和变更记录。
-- 提供项目分析能力：包引用、版本兼容、注册入口、XAML 命名空间、控件使用、AOT/trimming 风险和迁移问题。
-- 提供 Agent 友好的 JSON 输出、稳定错误码、stdout/stderr 分离和 MCP/Skill 集成。
-- 支持 AtomUI 核心包、可选扩展包和商业控件包。
-- 引入 GenericHost 作为应用级宿主，统一 DI、配置、日志、生命周期、命令 scope 和 MCP 长驻模式。
-- 基于 `AtomUI.Modularity` 构建 CLI 生态能力模块层，复用 AtomUI 统一模块身份、依赖拓扑、生命周期、服务冻结和 source generator catalog。
-- 坚持 AOT-first：默认设计必须兼容 Native AOT、trimming、RID-specific tool packaging 和无反射热路径。
-- 使用显式数据快照，不依赖运行时反射扫描 AtomUI 程序集。
-- 所有源码、工具、测试、文档和构建产物遵循统一工程边界。
+AtomUI Cli 是面向 AtomUI 生态的 .NET Tool。用户安装后通过 `dotnet atomui ...` 调用，用于查询 AtomUI 控件知识、分析项目使用情况、辅助迁移、生成 Agent 可消费的结构化信息，并为 MCP 集成提供稳定入口。
 
-## 3. 非目标
+AtomUI Cli 不是应用脚手架，也不是 AtomUI 运行时库。它的核心价值是把 AtomUI 生态的包信息、控件 API、Token、文档、示例、变更记录、项目诊断和商业控件数据组织成本地、稳定、可脚本化的命令行能力。
+
+## 3. 架构目标
+
+- 提供面向人和 Agent 的统一命令入口。
+- 将 AtomUI 生态知识沉淀为可版本化、可校验、可离线读取的数据快照。
+- 通过项目分析能力识别包引用、注册入口、XAML 命名空间、控件使用、版本兼容、AOT/trimming 风险和迁移问题。
+- 支持 AtomUI 核心包、扩展包和商业控件包，并保持公开数据与商业数据边界清晰。
+- 使用 GenericHost 作为应用级宿主，统一 DI、配置、日志、生命周期和长驻 MCP 模式。
+- 使用 AtomUI.Modularity 管理 CLI 功能模块的身份、依赖、生命周期和贡献点。
+- 保持 AOT-first：命令、模块、MCP tool、JSON DTO 和数据索引都必须显式注册或生成，避免运行时扫描和动态加载。
+- 输出协议稳定：stdout 只承载命令结果，stderr 承载错误和诊断，错误码、退出码和 JSON envelope 可被脚本依赖。
+
+## 4. 非目标
 
 - 不替代 `dotnet new` 模板系统。
 - 不在基础查询命令中访问网络。
-- 不在运行时加载用户项目程序集。
-- 不通过反射推断控件 API、Token 或 semantic parts。
+- 不在运行时加载或执行用户项目程序集。
+- 不通过运行时反射推断控件 API、Token 或 semantic parts。
 - 不在未显式确认的情况下修改用户项目。
-- 不把商业包内部 API 写入公开快照。
-- 不通过运行时程序集扫描发现命令、MCP tools、诊断规则或产品扩展。
+- 不把商业包内部私有 API 写入公开快照。
+- 不通过程序集扫描发现命令、MCP tools、诊断规则或产品扩展。
 - 不把应用级 DI 容器暴露为业务层 service locator。
-- 不把 `AtomUI.Modularity` 当成应用级 DI 容器；它只负责模块声明、依赖、生命周期和中立服务描述。
-- 不在 Native AOT 工具中动态加载外部模块程序集。商业控件和扩展能力通过显式编译进包的模块 catalog 或数据快照接入。
-- 不引入会触发 Native AOT 或 trimming 警告且无法消除的默认 Host provider。
+- 不在 Native AOT 工具中动态加载外部模块程序集。
 
-## 4. 仓库结构
+## 5. 系统上下文
 
-AtomUI Cli 仓库采用以下结构：
-
-```text
-AtomUICli/
-├── AtomUI.Cli.slnx
-├── global.json
-├── Directory.Build.props
-├── Directory.Build.targets
-├── Directory.Packages.props
-├── build/
-│   ├── Version.props
-│   ├── Common.props
-│   ├── PackageMetaInfo.props
-│   └── Output.props
-├── src/
-│   ├── AtomUI.Cli/
-│   ├── AtomUI.Cli.Abstractions/
-│   ├── AtomUI.Cli.Modularity/
-│   ├── AtomUI.Cli.Hosting/
-│   ├── AtomUI.Cli.Metadata/
-│   ├── AtomUI.Cli.ProjectAnalysis/
-│   └── AtomUI.Cli.Mcp/
-├── tools/
-│   └── AtomUI.Cli.MetadataBuilder/
-├── tests/
-│   ├── AtomUI.Cli.Tests/
-│   ├── AtomUI.Cli.Modularity.Tests/
-│   ├── AtomUI.Cli.Hosting.Tests/
-│   ├── AtomUI.Cli.Metadata.Tests/
-│   ├── AtomUI.Cli.ProjectAnalysis.Tests/
-│   ├── AtomUI.Cli.Mcp.Tests/
-│   └── AtomUI.Cli.Packaging.Tests/
-├── docs/
-│   ├── architecture/
-│   ├── engineering/
-│   ├── modules/
-│   ├── commands/
-│   └── AI/
-├── data/
-├── resources/
-└── output/
+```mermaid
+flowchart LR
+    Developer["开发者 / CI / Agent"] --> Cli["dotnet atomui"]
+    Cli --> App["AtomUICliApplication"]
+    App --> Commands["命令目录"]
+    App --> Modules["模块系统"]
+    App --> Mcp["MCP stdio server"]
+    Commands --> Metadata["元数据与知识库"]
+    Commands --> Analysis["项目分析"]
+    Commands --> Setup["写入工作流"]
+    Mcp --> Metadata
+    Mcp --> Analysis
+    Metadata --> BuiltInData["内置公开快照"]
+    Metadata --> ExternalData["外部数据根 / 商业快照"]
+    Analysis --> Project["用户项目文件"]
+    Setup --> Project
 ```
 
-目录职责：
+AtomUI Cli 运行时围绕一个应用编排器展开。应用编排器负责创建模块宿主和 GenericHost，收集模块贡献的命令、MCP tools、数据根和诊断规则，然后根据用户输入执行一次命令或启动 MCP 长驻服务。
 
-| 目录 | 职责 |
-| --- | --- |
-| `src/` | CLI 运行时代码、服务和适配器。 |
-| `tools/` | 构建期工具，例如元数据生成、校验和压缩。 |
-| `tests/` | 单元测试、快照测试、CLI 测试、pack smoke test。 |
-| `docs/architecture/` | 架构设计文档。 |
-| `docs/engineering/` | 工程规范、发布流程、验证规则。 |
-| `docs/modules/` | 模块和数据契约文档。 |
-| `docs/commands/` | 子命令设计文档，每个子命令一个独立目录。 |
-| `docs/AI/` | Agent/MCP/Skill 相关文档。 |
-| `data/` | 受版本控制的公开元数据源快照。 |
-| `resources/` | NuGet icon、README 附件等静态资源。 |
-| `output/` | 构建产物、临时生成物、NuGet 包和本地验证输出。 |
+## 6. 功能模块总览
 
-`docs/superpowers` 不承载架构文档。若未来保留该目录，只用于本地开发计划类材料。
-
-## 5. Build System
-
-### 5.1 SDK
-
-根目录提供 `global.json`，固定 SDK：
-
-```json
-{
-  "sdk": {
-    "version": "10.0.300",
-    "rollForward": "latestFeature"
-  }
-}
-```
-
-### 5.2 全局 MSBuild 文件
-
-根 `Directory.Build.props` 保持轻量，只设置通用 C# 编译选项并导入 build props：
-
-```xml
-<Project>
-  <PropertyGroup>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <Import Project="$(MSBuildThisFileDirectory)/build/Version.props"/>
-  <Import Project="$(MSBuildThisFileDirectory)/build/Common.props"/>
-  <Import Project="$(MSBuildThisFileDirectory)/build/PackageMetaInfo.props"/>
-  <Import Project="$(MSBuildThisFileDirectory)/build/Output.props"/>
-</Project>
-```
-
-`Directory.Build.targets` 只放跨项目的必要修正，不放业务逻辑。
-
-### 5.3 版本配置
-
-`build/Version.props` 是版本单一来源：
-
-```xml
-<Project>
-  <PropertyGroup>
-    <AtomUIVersion>6.0.6</AtomUIVersion>
-    <AtomUICliVersion>0.1.0</AtomUICliVersion>
-    <AtomUICliDataSchemaVersion>1</AtomUICliDataSchemaVersion>
-  </PropertyGroup>
-</Project>
-```
-
-### 5.4 通用构建配置
-
-`build/Common.props` 定义目标框架、配置和编译规则：
-
-```xml
-<Project>
-  <PropertyGroup>
-    <AtomUIDevelopTargetFramework>net10.0</AtomUIDevelopTargetFramework>
-    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
-    <AtomUICliToolTargetFramework>net10.0</AtomUICliToolTargetFramework>
-    <AtomUITargetFrameworks>$(AtomUICliToolTargetFramework)</AtomUITargetFrameworks>
-    <WarningsAsErrors>Nullable</WarningsAsErrors>
-  </PropertyGroup>
-</Project>
-```
-
-CLI 运行时项目、构建期工具和测试项目统一使用 `net10.0`。NuGet Tool 以 .NET SDK 10 的 RID-specific tool packaging 为主路径，优先发布 Native AOT 包；同时保留 `any` CoreCLR fallback 包，覆盖未提供 AOT 包的平台。
-
-运行时代码必须满足：
-
-- `AtomUI.Cli` 可执行项目在 Release AOT 包装时启用 `PublishAot`。
-- 运行时库项目声明 AOT/trim 兼容，并在 CI 中启用 trim analyzer 和 Native AOT analyzer。
-- AOT、trim、single-file 相关 warning 必须作为发布阻断项处理。
-- 任何 dependency 触发无法消除的 AOT warning 时，必须替换依赖、隔离到非 AOT fallback，或降低功能范围。
-
-### 5.5 包版本管理
-
-启用 Central Package Management：
-
-```xml
-<Project>
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-</Project>
-```
-
-集中管理 `AtomUI.Base`、`AtomUI.Base.Generator`、GenericHost、DI、Options、Logging、命令行框架、JSON、MCP、Roslyn、测试框架、快照测试和压缩相关依赖版本。项目文件只声明 `PackageReference Include`，不写版本号。
-
-首批模块化依赖：
-
-```xml
-<PackageVersion Include="AtomUI.Base" Version="1.0.0-alpha.1" />
-<PackageVersion Include="AtomUI.Base.Generator" Version="1.0.0-alpha.1" />
-```
-
-`AtomUI.Base.Generator` 只作为 analyzer/source generator 引入：
-
-```xml
-<PackageReference Include="AtomUI.Base.Generator" PrivateAssets="all" />
-```
-
-### 5.6 输出路径
-
-所有输出进入 `output/`：
-
-```text
-output/bin/<Configuration>
-output/<ProjectName>/obj
-output/Nuget/<Configuration>
-output/data
-```
-
-`build/Output.props` 统一配置：
-
-```xml
-<Project>
-  <PropertyGroup>
-    <PackageOutputPath>$(MSBuildThisFileDirectory)../output/Nuget/$(Configuration)</PackageOutputPath>
-    <OutputPathWithoutFramework>$(MSBuildThisFileDirectory)../output/bin/$(Configuration)</OutputPathWithoutFramework>
-    <OutputPath>$(OutputPathWithoutFramework)</OutputPath>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../output/$(MSBuildProjectName)/obj</BaseIntermediateOutputPath>
-    <IntermediateOutputPath>$(BaseIntermediateOutputPath)/$(Configuration)</IntermediateOutputPath>
-  </PropertyGroup>
-</Project>
-```
-
-## 6. `.gitignore` 策略
-
-`.gitignore` 必须忽略本地 IDE 状态、构建产物、临时依赖、本地资料目录和开发计划产物：
-
-```text
-.vs/
-.idea/
-*.user
-bin/
-obj/
-[Dd]ebug/
-[Rr]elease/
-output/
-outputs/
-.nuget/
-artifacts/
-BenchmarkDotNet.Artifacts/
-node_modules/
-.referenceprojects/
-.superpowers/
-docs/superpowers/plans
-src/**/GeneratedFiles/
-tools/**/bin/
-tools/**/obj/
-tests/**/bin/
-tests/**/obj/
-```
-
-受版本控制的内容：
-
-- `docs/architecture/**`
-- `docs/engineering/**`
-- `docs/modules/**`
-- `docs/commands/**`
-- `docs/AI/**`
-- `data/**/*.json`
-- `resources/**`
-- `build/*.props`
-- `build/*.targets`
-
-不提交 `output/`、压缩临时产物、本地 tool 安装目录、IDE workspace 文件和 generated debug files。
-
-## 7. 项目拆分
-
-| 项目 | 路径 | 职责 |
+| 模块 | 阶段 | 核心职责 |
 | --- | --- | --- |
-| `AtomUI.Cli` | `src/AtomUI.Cli` | .NET Tool 可执行入口、`Program.Main`、退出码返回。 |
-| `AtomUI.Cli.Abstractions` | `src/AtomUI.Cli.Abstractions` | DTO、错误码、服务契约、schema 常量。 |
-| `AtomUI.Cli.Modularity` | `src/AtomUI.Cli.Modularity` | CLI 模块基类、模块阶段、contribution context、模块诊断 adapter。 |
-| `AtomUI.Cli.Hosting` | `src/AtomUI.Cli.Hosting` | `AtomUICliApplication`、GenericHost 构建、应用级 DI 注册、`AtomUI.Modularity` adapter、命令调度、scope 生命周期。 |
-| `AtomUI.Cli.Metadata` | `src/AtomUI.Cli.Metadata` | 快照加载、版本解析、产品清单、名称解析。 |
-| `AtomUI.Cli.ProjectAnalysis` | `src/AtomUI.Cli.ProjectAnalysis` | 用户项目读取、XAML/C# 扫描、诊断规则。 |
-| `AtomUI.Cli.Mcp` | `src/AtomUI.Cli.Mcp` | MCP stdio server adapter。 |
-| `AtomUI.Cli.MetadataBuilder` | `tools/AtomUI.Cli.MetadataBuilder` | 构建期元数据生成、校验和压缩。 |
+| Core Runtime | P0 | 应用启动、GenericHost 集成、模块生命周期、命令 catalog、命令解析、命令调度、输出、错误码和退出码。 |
+| Metadata & Knowledge | P0 | 加载内置和外部元数据快照，提供控件、包、文档、示例、Token、semantic parts、设计文档和变更记录查询。 |
+| Project Analysis | P1 | 读取用户项目，构建包引用和源码使用模型，执行诊断规则，输出环境、doctor、usage、lint 和迁移分析结果。 |
+| MCP Integration | P1 | 将只读知识查询和项目分析能力暴露为 MCP tools，支持 Agent 通过 stdio 稳定调用。 |
+| Setup & Write Workflows | P2 | 管理 setup、init、add、upgrade 等写入类命令，提供 dry-run、写入计划、冲突检查和显式写入确认。 |
+| Commercial Data | P2 | 加载商业产品数据根，管理商业快照可见性、授权状态提示和商业控件查询能力。 |
 
-依赖方向：
+模块之间通过明确的服务契约和贡献点协作。命令和 MCP tools 只是适配层，业务逻辑归属到 Metadata、Project Analysis、Setup 或 Commercial Data 模块。
+
+## 7. Core Runtime 模块
+
+Core Runtime 是 CLI 的应用底座，负责把命令行进程组织成一个可管理的应用生命周期。
+
+核心对象：
+
+| 对象 | 职责 |
+| --- | --- |
+| `Program.Main` | 只负责创建 `AtomUICliApplication` 并返回退出码。 |
+| `AtomUICliApplication` | 应用编排器，拥有 `ModuleHost`、`IHost`、冻结后的 command catalog、MCP tool catalog 和诊断规则 catalog。 |
+| `AtomUICliApplicationBuilder` | 组合启动参数、Host 配置、模块 registration、模块启用选项和数据根选项。 |
+| `CliCommandDescriptorCatalog` | 保存所有显式注册的命令描述，不扫描程序集。 |
+| `CliCommandDispatcher` | 为每次命令执行创建 DI scope，解析 handler，写出结果并映射退出码。 |
+| `IOutputWriter` / `IErrorWriter` | 分离 stdout 与 stderr，并支持 text、json、markdown 输出。 |
+| `IExitCodeMapper` | 根据 `AtomUICliResult`、错误码和诊断 severity 统一计算退出码。 |
+
+Core Runtime 只承载通用运行时能力，不持有控件知识、项目扫描逻辑或商业数据规则。
+
+## 8. 生命周期设计
+
+生命周期设计是 AtomUI Cli 的运行时主轴。`AtomUICliApplication` 是唯一的生命周期编排器，它同时管理 AtomUI.Modularity 的 `ModuleHost` 和 .NET 的 `IHost`，并保证模块钩子、CLI 专属贡献点、命令执行、MCP 长驻服务和资源释放按固定顺序发生。
+
+### 8.1 生命周期角色
+
+| 角色 | 生命周期职责 |
+| --- | --- |
+| `Program.Main` | 只负责创建 `AtomUICliApplication`、调用 `RunAsync`、返回退出码。它不直接解析模块、不创建业务服务、不调度命令。 |
+| `AtomUICliApplicationBuilder` | 收集启动参数、模块 registration、启用模块集合、Host 配置和额外服务注册。Builder 不启动模块。 |
+| `AtomUICliApplication` | 生命周期总控。创建 `ModuleHost`，执行模块通用钩子和 CLI 专属钩子，构建 GenericHost，启动命令或 MCP server，并负责停止和释放。 |
+| `ModuleHost` | 负责模块拓扑、模块实例创建、服务描述收集、服务冻结、模块初始化和模块关闭。 |
+| `IHost` | 负责应用级 DI provider、配置、日志、host lifetime、取消信号和 hosted service 生命周期。 |
+| Command / MCP scope | 负责隔离一次命令执行或一次 MCP tool invocation 的短生命周期状态。 |
+
+`ModuleHost` 和 `IHost` 的边界必须清晰：模块系统描述能力和服务，GenericHost 承载运行时 DI 和应用生命周期。任何业务模块都不能绕过 `AtomUICliApplication` 直接启动、停止或重新运行模块阶段。
+
+### 8.2 状态机
+
+`AtomUICliApplication` 使用显式状态机组织启动和退出：
 
 ```text
-AtomUI.Cli
-  -> AtomUI.Cli.Hosting
-
-AtomUI.Cli.Hosting
-  -> AtomUI.Cli.Modularity
-  -> AtomUI.Cli.Abstractions
-  -> AtomUI.Cli.Metadata
-  -> AtomUI.Cli.ProjectAnalysis
-  -> AtomUI.Cli.Mcp
-
-AtomUI.Cli.Modularity
-  -> AtomUI.Cli.Abstractions
-  -> AtomUI.Base
-
-AtomUI.Cli.Metadata
-  -> AtomUI.Cli.Abstractions
-  -> AtomUI.Cli.Modularity
-
-AtomUI.Cli.ProjectAnalysis
-  -> AtomUI.Cli.Abstractions
-  -> AtomUI.Cli.Modularity
-  -> AtomUI.Cli.Metadata
-
-AtomUI.Cli.Mcp
-  -> AtomUI.Cli.Abstractions
-  -> AtomUI.Cli.Modularity
-  -> AtomUI.Cli.Metadata
-
-AtomUI.Cli.MetadataBuilder
-  -> AtomUI.Cli.Abstractions
+Created
+  -> ModulesResolving
+  -> ModulesCreating
+  -> ModuleServicesConfiguring
+  -> ModuleServicesFrozen
+  -> CliContributionsConfiguring
+  -> CliCatalogsFrozen
+  -> HostBuilding
+  -> ModulesInitializing
+  -> HostStarting
+  -> RunningCommand / RunningMcpServer
+  -> HostStopping
+  -> ModulesShuttingDown
+  -> Disposed
 ```
 
-命令行和 MCP 只做适配层，不直接实现业务逻辑。
+状态职责：
 
-`AtomUI.Cli.Hosting` 是唯一应用级 composition root。业务项目通过 `AtomUICliModule` 提供模块声明、服务注册和 contribution 注册，不能在业务逻辑中接收 `IServiceProvider`、动态解析任意服务或依赖 GenericHost 生命周期对象。
+| 状态 | 入口条件 | 主要动作 | 失败处理 |
+| --- | --- | --- | --- |
+| `Created` | Builder 构建完成 | 保存 args、模块 registration 和 Host 配置 | 无业务动作。 |
+| `ModulesResolving` | 开始运行 | 解析启用模块、依赖闭包和拓扑顺序 | 返回模块解析错误。 |
+| `ModulesCreating` | 模块拓扑有效 | 创建模块实例 | 返回模块创建错误。 |
+| `ModuleServicesConfiguring` | 模块实例有效 | 执行 `PreConfigureServices`、`ConfigureServices`、`PostConfigureServices` | 返回模块服务配置错误。 |
+| `ModuleServicesFrozen` | 服务配置成功 | 冻结模块服务描述，禁止继续修改 | 返回服务冻结错误。 |
+| `CliContributionsConfiguring` | 模块服务已冻结 | 收集数据根、命令、MCP tool、诊断规则等 CLI 专属贡献 | 返回 contribution 错误。 |
+| `CliCatalogsFrozen` | contribution 收集成功 | 构建不可变 catalog，检查重复项和冲突 | 返回 catalog 错误。 |
+| `HostBuilding` | catalog 已冻结 | 把模块服务描述映射到 `IServiceCollection`，注册冻结 catalog，构建 `IHost` | 返回 Host 构建错误。 |
+| `ModulesInitializing` | Host build 成功 | 调用模块初始化钩子 | 停止启动，进入关闭流程。 |
+| `HostStarting` | 模块初始化成功 | 启动 GenericHost | 停止启动，进入关闭流程。 |
+| `RunningCommand` | 普通命令入口 | 创建 command scope，解析 handler，执行命令 | 映射为命令结果和退出码。 |
+| `RunningMcpServer` | `mcp` 入口 | 启动 stdio server，每次 tool 调用创建 scope | transport 或 tool 错误映射到 MCP 错误码。 |
+| `HostStopping` | 命令结束、MCP 退出、失败或取消 | 停止 Host，释放 hosted services | 不吞掉原始结果，但记录停止错误。 |
+| `ModulesShuttingDown` | Host 已停止或未成功启动 | 按反向拓扑顺序关闭模块 | 返回或记录模块关闭错误。 |
+| `Disposed` | 资源释放完成 | 清空 Host 和 ModuleHost 引用 | 后续调用必须失败或 no-op。 |
 
-## 8. 命令入口
+### 8.3 钩子调用顺序
 
-### 8.1 Tool 包
+模块通用钩子和 CLI 专属钩子必须由 `AtomUICliApplication` 统一调用：
 
-NuGet Tool 包配置：
-
-```xml
-<PackageId>AtomUI.Cli</PackageId>
-<PackAsTool>true</PackAsTool>
-<ToolCommandName>dotnet-atomui</ToolCommandName>
-<Version>$(AtomUICliVersion)</Version>
+```text
+Load generated ModuleRegistration catalog
+  -> Merge explicit ModuleRegistration
+  -> ModuleHost.ResolveModules()
+  -> ModuleHost.CreateModules()
+  -> ModuleHost.PreConfigureServicesAsync()
+  -> ModuleHost.ConfigureServicesAsync()
+  -> ModuleHost.PostConfigureServicesAsync()
+  -> ModuleHost.FreezeServices()
+  -> ConfigureAtomUICliDataRootsAsync()
+  -> ConfigureAtomUICliCommandsAsync()
+  -> ConfigureAtomUICliMcpToolsAsync()
+  -> ConfigureAtomUICliDiagnosticRulesAsync()
+  -> Freeze DataRootCatalog / CommandCatalog / McpToolCatalog / DiagnosticRuleCatalog
+  -> Build GenericHost
+  -> ModuleHost.InitializeModulesAsync()
+  -> IHost.StartAsync()
+  -> Dispatch command 或 run MCP server
+  -> IHost.StopAsync()
+  -> ModuleHost.ShutdownAsync()
 ```
 
-安装：
+当前核心实现已经落地命令 contribution 阶段；数据根、MCP tool 和诊断规则阶段是同一生命周期模型下的扩展阶段，不能通过独立扫描或局部初始化绕开 Application。
 
-```bash
-dotnet tool install --global AtomUI.Cli
-```
+### 8.4 GenericHost 与 ModuleHost 的顺序关系
 
-调用：
+AtomUI Cli 采用“先模块描述，后 Host 实例”的启动顺序：
 
-```bash
-dotnet atomui list
-dotnet atomui info Button
-dotnet atomui doctor ./src/MyApp
-```
+1. `ModuleHost` 先完成模块拓扑、模块实例创建和模块服务描述收集。
+2. 模块服务描述冻结后，CLI 专属 contribution 阶段收集所有 catalog。
+3. 冻结 catalog 后，`AtomUICliApplication` 将模块服务描述映射到 `IServiceCollection`。
+4. `IHost` build 后，模块才能进入初始化阶段。
+5. `IHost.StartAsync()` 只在模块初始化成功后执行。
 
-### 8.2 全局选项
+这样设计的原因是命令目录、MCP tool 目录、诊断规则目录和数据根目录必须在应用开始处理请求前成为不可变输入。Host provider 不负责发现模块能力，它只承载已经确定的能力。
 
-| 选项 | 说明 |
-| --- | --- |
-| `--format <text|json|markdown>` | 输出格式。Agent 场景使用 `json`。 |
-| `--target-version <version>` | 目标 AtomUI 版本，例如 `6.0.6`。 |
-| `--product <id>` | 产品过滤，例如 `desktop`、`datagrid`、`charts`。 |
-| `--lang <zh|en>` | 输出语言，默认 `zh`。 |
-| `--detail` | 输出详细信息。 |
-| `--data-root <path>` | 额外数据根目录，用于内部或商业快照。 |
-| `--no-update-check` | 禁止更新检查。 |
+### 8.5 Scope 与取消传播
 
-`--version` 保留给 CLI 工具版本，不用于表示目标 AtomUI 库版本。
+命令和 MCP 的 scope 规则不同：
 
-### 8.3 `AtomUI.Modularity` 模块层
-
-AtomUI Cli 使用 `AtomUI.Modularity` 作为生态能力模块层。模块层负责描述“当前工具包含哪些能力、这些能力依赖什么、按什么顺序注册服务、按什么顺序贡献命令和 MCP tools”。它不负责进程生命周期和应用级 DI；这些仍由 GenericHost 负责。
-
-模块层分工：
-
-| 层 | 职责 |
-| --- | --- |
-| `AtomUI.Modularity` | 模块身份、`ModuleDescriptor`、`ModuleRegistration`、required dependency、生命周期、服务冻结、diagnostics、AOT catalog。 |
-| `AtomUI.Cli.Modularity` | `AtomUICliModule`、CLI 专属阶段 marker、命令/MCP/data contribution context、模块诊断到 CLI 错误码的 adapter。 |
-| `AtomUI.Cli.Hosting` | 创建 `ModuleHost`、合并 generated catalogs、执行模块阶段、把中立服务描述映射到 `IServiceCollection`、冻结 CLI catalogs。 |
-| Feature projects | 声明具体模块，并贡献服务、命令、MCP tools、诊断规则和数据根能力。 |
-
-首批模块：
-
-| 模块 | 所属项目 | 职责 |
+| 运行模式 | Scope 规则 | 典型 scoped 对象 |
 | --- | --- | --- |
-| `AtomUICliCoreModule` | `AtomUI.Cli.Hosting` | 输出、错误码、格式化、全局选项、基础命令调度。 |
-| `AtomUICliMetadataModule` | `AtomUI.Cli.Metadata` | 快照加载、版本解析、产品清单、控件查询命令。 |
-| `AtomUICliProjectAnalysisModule` | `AtomUI.Cli.ProjectAnalysis` | `env`、`doctor`、`usage`、`lint`、诊断规则。 |
-| `AtomUICliMcpModule` | `AtomUI.Cli.Mcp` | MCP stdio server、MCP tool descriptors、tool invocation scope。 |
-| `AtomUICliSetupModule` | `AtomUI.Cli.Hosting` | `setup`、`init`、`add`、写入命令的 dry-run/write 边界。 |
-| `AtomUICliCommercialDataModule` | `AtomUI.Cli.Metadata` | 外部商业数据根、商业产品快照解析和授权错误提示。 |
+| 单次命令 | 每次 `dotnet atomui <command>` 创建一个 command scope | `CliInvocationContext`、全局选项、诊断收集器、项目分析上下文、输出目标。 |
+| MCP 长驻 | MCP server 复用同一个 root Host；每次 tool invocation 创建一个 invocation scope | tool 参数上下文、请求级诊断、项目分析上下文、结果序列化上下文。 |
 
-模块示例：
+取消信号来自 Ctrl+C、Host lifetime、命令参数处理和 MCP request context。`CancellationToken` 必须向模块初始化、命令 handler、项目扫描、元数据读取和 MCP tool handler 传递。取消发生后，Application 仍然必须执行 Host stop 和模块 shutdown。
+
+### 8.6 生命周期失败边界
+
+生命周期失败必须在最早边界被转换为结构化错误：
+
+| 失败位置 | 错误域 | 处理方式 |
+| --- | --- | --- |
+| 模块解析、模块创建 | `ATOMUICLI_MOD` | 阻止 Host build，不进入命令执行。 |
+| 模块服务配置、服务冻结 | `ATOMUICLI_MOD` | 阻止 contribution 收集，不进入 Host build。 |
+| contribution 重复、冲突或非法命令定义 | `ATOMUICLI_MOD` / `ATOMUICLI_ARG` | catalog 不冻结，不进入 Host build。 |
+| Host build 或 Host start | `ATOMUICLI_SYS` | 进入清理流程，返回系统错误。 |
+| 命令参数错误 | `ATOMUICLI_ARG` | 不调用业务 handler，直接输出结构化错误。 |
+| 命令业务错误 | 对应业务域 | handler 返回 `AtomUICliResult`，由 `IExitCodeMapper` 映射退出码。 |
+| MCP transport 或 tool 错误 | `ATOMUICLI_MCP` 或业务域 | 返回 JSON-RPC 错误响应，不破坏 root Host。 |
+| 取消 | `ATOMUICLI_SYS` | 停止当前执行，仍执行 Host stop 和模块 shutdown。 |
+
+## 9. 模块化设计
+
+模块化设计是 AtomUI Cli 的功能组织方式。一个模块代表一组可独立理解、可声明依赖、可注册服务、可贡献 CLI 能力的业务单元。模块不是目录名，也不是单纯的程序集拆分；模块的核心是“能力边界”和“生命周期参与方式”。
+
+### 9.1 模块分层
+
+AtomUI Cli 基于 AtomUI.Modularity 构建功能模块层，但不把模块系统当作应用级 DI 容器。
+
+| 层 | 职责 | 不负责 |
+| --- | --- | --- |
+| AtomUI.Modularity | 模块身份、依赖声明、registration、拓扑排序、通用生命周期、服务描述、服务冻结和 AOT 友好的模块 catalog。 | 不解析 CLI 命令，不启动 GenericHost，不处理 stdout/stderr。 |
+| AtomUI.Cli.Modularity | CLI 模块基类、CLI 专属贡献上下文、贡献项 DTO、模块错误适配。 | 不保存 root `IServiceProvider`，不执行命令。 |
+| AtomUI.Cli.Hosting | 创建 `ModuleHost`，执行模块阶段，将模块服务映射到 GenericHost DI，冻结 CLI catalogs，调度命令和 MCP。 | 不实现控件查询、项目扫描或商业授权规则。 |
+| 功能模块 | 声明依赖，注册领域服务，贡献命令、MCP tools、诊断规则和数据根 provider。 | 不直接启动 Host，不直接调用其他模块钩子，不扫描程序集发现能力。 |
+
+### 9.2 模块依赖拓扑
+
+首批模块依赖关系：
+
+```mermaid
+flowchart TD
+    Core["AtomUICliCoreModule"]
+    Metadata["AtomUICliMetadataModule"]
+    Project["AtomUICliProjectAnalysisModule"]
+    Mcp["AtomUICliMcpModule"]
+    Setup["AtomUICliSetupModule"]
+    Commercial["AtomUICliCommercialDataModule"]
+
+    Metadata --> Core
+    Project --> Metadata
+    Mcp --> Metadata
+    Mcp --> Project
+    Setup --> Metadata
+    Setup --> Project
+    Commercial --> Metadata
+```
+
+依赖规则：
+
+- Core Runtime 是所有功能模块的基础依赖。
+- Metadata & Knowledge 是知识查询、项目诊断、MCP 和商业数据的公共知识源。
+- Project Analysis 可以依赖 Metadata 的产品和包规则，但 Metadata 不能反向依赖 Project Analysis。
+- MCP Integration 只做 transport 和 tool adapter，复用 Metadata 与 Project Analysis 服务。
+- Setup & Write Workflows 依赖 Metadata 和 Project Analysis 生成写入计划。
+- Commercial Data 扩展 Metadata 的数据根和可见性规则，不要求其他模块反向依赖商业模块。
+
+模块依赖必须用强类型声明，例如 `typeof(AtomUICliMetadataModule)`。禁止用手写字符串表达依赖关系。
+
+### 9.3 模块内部结构
+
+一个 CLI 模块由五类内容组成：
+
+| 内容 | 说明 |
+| --- | --- |
+| 模块描述 | 模块类型、显示名、依赖模块和可选元数据。 |
+| 服务注册 | 领域服务、reader、resolver、rule、formatter 等 DI 服务描述。 |
+| 生命周期钩子 | 初始化缓存、校验数据根、释放资源等模块级动作。 |
+| CLI 贡献 | 命令、MCP tools、诊断规则、数据根 provider 等多贡献能力。 |
+| 错误适配 | 将模块内部失败映射到统一错误码和诊断对象。 |
+
+示例形态：
 
 ```csharp
-using AtomUI.Modularity;
-
 [Module(Dependencies = [typeof(AtomUICliCoreModule)])]
 public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 {
@@ -398,763 +286,587 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 
     public override void ConfigureAtomUICliCommands(AtomUICliCommandContributionContext context)
     {
-        context.Commands.Add<ListCommandOptions, ListCommandHandler>("list");
-        context.Commands.Add<InfoCommandOptions, InfoCommandHandler>("info");
+        context.Add<ListCommandOptions, ListCommandHandler>("list", ...);
+        context.Add<InfoCommandOptions, InfoCommandHandler>("info", ...);
     }
 }
 ```
 
-`AtomUI.Base.Generator` 生成 CLI 模块 catalog：
+模块可以注册服务，也可以贡献 CLI 能力；两者不是一回事。服务注册描述“运行时如何解析对象”，贡献点描述“模块向 CLI 暴露哪些能力”。
 
-```xml
-<PropertyGroup>
-  <AtomUIModularityCatalogNamespace>AtomUI.Cli.Generated</AtomUIModularityCatalogNamespace>
-  <AtomUIModularityCatalogTypeName>AtomUICliModuleCatalog</AtomUIModularityCatalogTypeName>
-</PropertyGroup>
-```
+### 9.4 服务注册与贡献点边界
+
+服务注册适合单一职责对象，例如 loader、resolver、rule runner、writer、formatter。贡献点适合“一类能力有多个来源”的场景，例如多个模块都可以贡献命令、MCP tools、诊断规则或数据根。
+
+| 场景 | 应使用 | 原因 |
+| --- | --- | --- |
+| `IControlQueryService` | 服务注册 | 运行时只需要解析一个查询服务实现。 |
+| `list` / `info` / `doctor` 命令 | Command Contribution | 命令是公开 CLI surface，需要统一去重、分组、帮助和权限元数据。 |
+| `atomui_info` MCP tool | MCP Tool Contribution | MCP tool 需要统一 schema、权限和 invocation scope。 |
+| `AotReadinessRule` | Diagnostic Rule Contribution | 诊断规则来自多个模块，需要统一排序和输出。 |
+| 商业数据根 provider | Data Root Contribution | 数据根可由内置包、外部路径和商业模块共同贡献。 |
+
+禁止把多贡献能力塞进普通 DI collection 后再枚举 `IEnumerable<T>` 当作能力发现机制。所有公开能力必须先进入 contribution context，再由 Application 构建不可变 catalog。
+
+### 9.5 CLI 专属贡献阶段
+
+CLI 专属贡献阶段在模块服务冻结之后、Host build 之前执行：
+
+| 阶段 | 输入 | 输出 catalog | 主要校验 |
+| --- | --- | --- | --- |
+| Data Root Contribution | 模块声明的数据根 provider | `DataRootProviderCatalog` | 数据根 ID 唯一、visibility 合法、schema 范围明确。 |
+| Command Contribution | 模块声明的命令 descriptor | `CliCommandDescriptorCatalog` | 命令名唯一、分组合法、options/handler 类型匹配、写入标记明确。 |
+| MCP Tool Contribution | 模块声明的 MCP tool descriptor | `McpToolDescriptorCatalog` | tool 名唯一、参数 schema 明确、只读/写入权限明确。 |
+| Diagnostic Rule Contribution | 模块声明的诊断规则 descriptor | `DiagnosticRuleCatalog` | rule code 唯一、severity 合法、适用命令和项目范围明确。 |
+
+冻结后的 catalog 是运行时事实来源。命令帮助、命令调度、MCP tool list、项目诊断规则运行和输出 schema 都必须读取这些 catalog。
+
+### 9.6 模块生命周期钩子
+
+模块生命周期分为通用钩子和 CLI 专属钩子：
+
+| 钩子 | 调用时机 | 允许做什么 | 禁止做什么 |
+| --- | --- | --- | --- |
+| `PreConfigureServices` | 服务注册前 | 准备模块内部配置、声明轻量前置条件。 | 访问 root provider、读取用户项目。 |
+| `ConfigureServices` | 服务注册阶段 | 注册领域服务、reader、resolver、handler、rule。 | 注册公开命令或 MCP tools。 |
+| `PostConfigureServices` | 服务注册后 | 补充依赖其他模块服务描述的注册。 | 修改已冻结 catalog。 |
+| `ConfigureAtomUICliDataRoots` | 服务冻结后 | 贡献内置或外部数据根 provider。 | 加载大型数据或执行用户代码。 |
+| `ConfigureAtomUICliCommands` | 数据根贡献后 | 贡献命令 descriptor 和 handler 类型。 | 直接实例化 handler。 |
+| `ConfigureAtomUICliMcpTools` | 命令贡献后 | 贡献 MCP tool descriptor。 | 绕过命令或领域服务重复实现业务逻辑。 |
+| `ConfigureAtomUICliDiagnosticRules` | MCP tool 贡献后 | 贡献诊断规则 descriptor。 | 扫描用户项目。 |
+| `Initialize` | Host build 后、Host start 前 | 初始化轻量缓存、校验关键配置。 | 启动长驻服务或执行命令。 |
+| `Shutdown` | Host stop 后 | 释放模块资源。 | 再次访问已释放的 command scope。 |
+
+CLI 专属钩子的命名可以随实现细化，但阶段顺序不能改变：先服务，后贡献；先冻结 catalog，再构建 Host；先初始化模块，再启动 Host。
+
+### 9.7 模块发现与 AOT
+
+模块 catalog 必须来自显式 registration 或 source generator：
 
 ```text
 AtomUICliModuleCatalog.CreateRegistrations()
   -> IReadOnlyList<ModuleRegistration>
+  -> AtomUICliApplicationBuilder
   -> ModuleHost
 ```
 
-模块启用规则：
+AOT 约束：
 
-- 内置 CLI 模块默认全启用，依赖闭包由 `ModuleHost` 解析。
-- 调试或裁剪场景可以通过强类型 `ModuleHostOptionsBuilder.Enable<TModule>()` 构建最小模块集合。
-- 常规源码、测试输入和文档示例必须使用模块类型或泛型入口，不手写模块 ID 字符串。
-- 商业控件支持默认通过数据快照接入，不动态加载商业模块程序集；如果未来商业能力需要代码模块，必须编译进 tool 包并合并 generated catalog。
+- 不通过 `Assembly.GetTypes()` 查找模块。
+- 不通过 attribute scanning 在运行时发现命令。
+- 不动态加载商业模块程序集。
+- 不通过字符串拼接构造 handler 类型。
+- 不通过反射调用模块钩子。
 
-### 8.4 `AtomUICliApplication`、GenericHost 与模块生命周期
+商业控件能力默认通过数据快照和数据根接入。如果未来商业能力需要代码模块，该模块必须在构建时编译进 tool 包，并进入 generated module catalog。
 
-AtomUI Cli 抽象出 `AtomUICliApplication` 作为应用编排器。它不是某个命令 handler，也不是 GenericHost 的替代品；它持有 `ModuleHost` 和 `IHost`，统一负责模块生命周期、GenericHost 生命周期、命令执行、MCP 长驻和最终释放。
+### 9.8 模块失败隔离
 
-职责：
+模块失败必须被隔离在模块边界：
 
-| 类型 | 职责 |
-| --- | --- |
-| `Program.Main` | 只解析进程入口、创建 `AtomUICliApplication` 并返回退出码。 |
-| `AtomUICliApplication` | 拥有 `ModuleHost`、`IHost`、冻结 catalogs 和运行状态，调用所有模块通用钩子和 CLI 专属钩子。 |
-| `AtomUICliApplicationBuilder` | 合并 args、Host 配置、模块 registrations、模块启用选项和数据根选项。 |
-| `ModuleHost` | 执行 `AtomUI.Modularity` 的通用模块生命周期。 |
-| `IHost` | 执行 GenericHost 的应用级 DI、logging、lifetime、hosted service 生命周期。 |
+- 模块解析失败时，不创建 Host。
+- 模块服务配置失败时，不执行 CLI contribution。
+- contribution 校验失败时，不构建 Host。
+- 模块初始化失败时，停止 Host 启动并进入 shutdown。
+- 单个命令 handler 失败不能破坏 root Host；错误通过 `AtomUICliResult` 返回。
+- MCP 单次 tool invocation 失败不能破坏 MCP server；错误映射为 JSON-RPC error response。
 
-`AtomUICliApplication` 对外暴露的核心形态：
+模块化的目标不是让模块随意扩展进程行为，而是让每个能力都通过可校验、可冻结、可 AOT 分析的边界进入 CLI。
 
-```csharp
-public sealed class AtomUICliApplication : IAsyncDisposable
-{
-    public ModuleHost? ModuleHost { get; private set; }
+## 10. DI 容器化设计
 
-    public IHost? Host { get; private set; }
+DI 容器化设计是 AtomUI Cli 的运行时装配基础。AtomUI Cli 使用 GenericHost 提供应用级 DI 容器，但模块本身不直接持有 `IServiceProvider`。模块只声明服务描述和 CLI 贡献项，`AtomUICliApplication` 在 Host build 阶段把这些描述映射到 `IServiceCollection`，最终由 GenericHost 构建 root provider。
 
-    public CliCommandDescriptorCatalog Commands { get; private set; } = CliCommandDescriptorCatalog.Empty;
+### 10.1 容器分层
 
-    public McpToolDescriptorCatalog McpTools { get; private set; } = McpToolDescriptorCatalog.Empty;
+AtomUI Cli 的 DI 不是单层容器，而是分为四个层次：
 
-    public static AtomUICliApplicationBuilder CreateBuilder(string[] args);
+| 层 | 生命周期 | 职责 |
+| --- | --- | --- |
+| `ModuleServiceCollection` | Host build 前 | 模块注册服务描述的中立集合，不是运行时容器。 |
+| `ModuleServiceRegistry` | 服务冻结后 | 保存不可变服务描述，作为映射到 GenericHost 的输入。 |
+| GenericHost root provider | 进程级 | 承载 singleton 服务、冻结 catalog、基础设施服务、长驻 MCP server。 |
+| Command / MCP invocation scope | 请求级 | 承载一次命令或一次 MCP tool invocation 的上下文和短生命周期对象。 |
 
-    public ValueTask<int> RunAsync(
-        IReadOnlyList<string> args,
-        CancellationToken cancellationToken = default);
-}
-```
+容器化的核心规则是：模块描述服务，Application 装配服务，GenericHost 解析服务，scope 隔离请求状态。
 
-`AtomUICliApplication` 状态机：
+### 10.2 容器构建链路
 
-```text
-Created
-  -> ModulesResolving
-  -> ModulesCreating
-  -> ModuleServicesConfiguring
-  -> ModuleContributionsConfiguring
-  -> HostBuilding
-  -> ModulesInitializing
-  -> HostStarting
-  -> RunningCommand / RunningMcpServer
-  -> HostStopping
-  -> ModulesShuttingDown
-  -> Disposed
-```
-
-所有模块钩子必须由 `AtomUICliApplication` 统一触发，其他类型不能绕过 Application 直接调用 `ModuleHost.InitializeAsync()` 或 `RunModulePhaseAsync(...)`。
-
-模块钩子顺序：
+DI 构建链路固定如下：
 
 ```text
-ModuleHost.ResolveModules()
-ModuleHost.CreateModules()
-ModuleHost.PreConfigureServicesAsync()
-ModuleHost.ConfigureServicesAsync()
-ModuleHost.PostConfigureServicesAsync()
-ModuleHost.FreezeServices()
-ModuleHost.RunModulePhaseAsync(AtomUICliDataRootConfiguringPhase)
-ModuleHost.RunModulePhaseAsync(AtomUICliCommandConfiguringPhase)
-ModuleHost.RunModulePhaseAsync(AtomUICliMcpToolConfiguringPhase)
-ModuleHost.RunModulePhaseAsync(AtomUICliDiagnosticRuleConfiguringPhase)
-ModuleHost.InitializeModulesAsync()
-...
-ModuleHost.ShutdownAsync()
-```
-
-GenericHost 与模块生命周期的关系：
-
-- `AtomUICliApplication` 在 `HostBuilding` 前完成模块解析、模块创建、模块服务注册、服务冻结和 CLI contribution catalog 冻结。
-- `AtomUICliApplication` 把冻结后的 `ModuleServiceRegistry.Descriptors` 映射到 `HostApplicationBuilder.Services`。
-- `IHost` build 完成后，`AtomUICliApplication` 调用 `ModuleHost.InitializeModulesAsync()`。
-- `IHost.StartAsync()` 只在模块初始化成功后执行。
-- 无论命令执行成功、失败、取消或 MCP server 退出，`AtomUICliApplication` 都必须先停止 GenericHost，再反向调用 `ModuleHost.ShutdownAsync()`。
-
-AtomUI Cli 使用 GenericHost 作为应用级宿主。Host 负责一次进程启动内的配置、DI、日志、生命周期和取消信号；命令执行通过显式 command scope 隔离。`AtomUI.Modularity` 在 Host build 之前完成模块解析、服务描述收集和 contribution catalog 冻结。
-
-启动链路：
-
-```text
-Program.Main
-  -> AtomUICliApplication.CreateBuilder(args)
-  -> AtomUICliApplicationBuilder
-  -> Build AtomUICliApplication in Created state
-  -> AtomUICliApplication.RunAsync(args)
-```
-
-`AtomUICliApplication.RunAsync` 内部链路：
-
-```text
-Created
-  -> Load AtomUICliModuleCatalog.CreateRegistrations()
-  -> Create ModuleHost
-  -> ResolveModules / CreateModules
-  -> PreConfigureServices / ConfigureServices / PostConfigureServices
-  -> FreezeServices
-  -> Run AtomUICliDataRootConfiguringPhase
-  -> Run AtomUICliCommandConfiguringPhase
-  -> Run AtomUICliMcpToolConfiguringPhase
-  -> Run AtomUICliDiagnosticRuleConfiguringPhase
-  -> Freeze data root / command / MCP / diagnostic catalogs
-  -> HostApplicationBuilder
-  -> Map ModuleServiceRegistry.Descriptors to IServiceCollection
-  -> Register frozen catalogs into IServiceCollection
+Module.ConfigureServices
+  -> ModuleServiceCollection
+  -> ModuleHost.FreezeServices()
+  -> ModuleServiceRegistry
+  -> ModuleServiceDescriptorMapper
+  -> HostApplicationBuilder.Services
+  -> Register frozen CLI catalogs
+  -> Register runtime infrastructure
   -> Build IHost
-  -> InitializeModules
-  -> Start IHost
-  -> Dispatch command or run MCP server
-  -> Stop IHost
-  -> ShutdownModules
-  -> Disposed
+  -> Root IServiceProvider
 ```
 
-`ModuleServiceRegistry.Descriptors` 到 `IServiceCollection` 的映射：
+关键点：
 
-| `ModuleServiceLifetime` | `IServiceCollection` 映射 |
+- `ModuleServiceCollection` 只能记录服务描述，不能解析服务。
+- `ModuleHost.FreezeServices()` 后，模块不能再追加或修改服务。
+- `ModuleServiceDescriptorMapper` 是模块服务描述进入 GenericHost DI 的唯一入口。
+- 冻结后的 command、MCP tool、diagnostic rule、data root catalogs 以 singleton 形式注册到 root provider。
+- root provider build 完成后，业务代码只能通过构造函数注入拿依赖。
+
+### 10.3 服务生命周期划分
+
+服务生命周期按状态归属选择：
+
+| 生命周期 | 适用对象 | 设计要求 |
+| --- | --- | --- |
+| Singleton | 不可变 catalog、元数据索引、版本解析器、输出格式化器、错误码 catalog、JSON serializer context、MCP tool catalog。 | 必须线程安全，不保存命令级状态，不访问 scoped 服务。 |
+| Scoped | `CliInvocationContext`、全局选项、诊断收集器、项目分析上下文、写入计划上下文、MCP invocation context。 | 只能在 command scope 或 MCP invocation scope 内使用。 |
+| Transient | 命令 handler、一次性 parser、短生命周期 scanner、迁移步骤执行器、写入步骤执行器。 | 不持有跨请求状态，依赖通过构造函数注入。 |
+
+默认选择：
+
+- 不可变数据和基础设施用 singleton。
+- 和当前命令、当前项目、当前请求相关的状态用 scoped。
+- 只封装一次操作、不保存状态的执行器用 transient。
+
+### 10.4 模块服务描述到 GenericHost 的映射
+
+模块系统使用中立服务描述，Application 负责映射到 `IServiceCollection`：
+
+| 模块服务描述 | GenericHost DI 映射 |
 | --- | --- |
-| `Singleton` + instance | `AddSingleton(serviceType, instance)` |
-| `Singleton` + implementation type | `AddSingleton(serviceType, implementationType)` |
-| `Scoped` + implementation type | `AddScoped(serviceType, implementationType)` |
-| `Transient` + implementation type | `AddTransient(serviceType, implementationType)` |
+| Singleton instance | `AddSingleton(serviceType, instance)` |
+| Singleton implementation type | `AddSingleton(serviceType, implementationType)` |
+| Scoped implementation type | `AddScoped(serviceType, implementationType)` |
+| Transient implementation type | `AddTransient(serviceType, implementationType)` |
 
-`ModuleServiceCollection` 是中立服务描述集合，不作为多贡献列表使用。命令、MCP tool、诊断规则、数据根 provider 这类“一类能力多个贡献”的场景，必须走 CLI 专属 contribution context：
+映射阶段不允许执行用户代码，也不允许根据运行时环境动态扫描程序集。所有服务类型和实现类型必须来自显式注册或 source generator 输出。
+
+### 10.5 解析边界
+
+允许使用 `IServiceProvider` 的地方只有 composition boundary：
+
+- `AtomUICliApplicationBuilder` 构建 Host。
+- `CliCommandDispatcher` 创建 command scope 并解析命令 handler。
+- MCP server adapter 为每次 tool invocation 创建 scope 并解析 tool handler。
+- 测试基础设施可以使用 provider 验证注册完整性。
+
+禁止：
+
+- 业务服务接收 `IServiceProvider` 并按字符串或类型动态解析依赖。
+- 模块在生命周期钩子中保存 root provider。
+- singleton 服务解析 scoped 服务。
+- command handler 自己创建 scope。
+- 通过 `IEnumerable<T>` 枚举 DI 服务来发现命令、MCP tools、诊断规则或数据根。
+
+业务服务必须使用构造函数注入。需要可选能力时，应通过显式 catalog、策略对象或配置对象表达，而不是运行时尝试解析服务。
+
+### 10.6 命令与 MCP 的 scope 模型
+
+命令执行：
 
 ```text
-AtomUICliCommandContributionContext
-  -> AtomUICliCommandCatalogBuilder
-
-AtomUICliMcpToolContributionContext
-  -> AtomUICliMcpToolCatalogBuilder
-
-AtomUICliDiagnosticRuleContributionContext
-  -> AtomUICliDiagnosticRuleCatalogBuilder
+Root provider
+  -> Create command IServiceScope
+  -> Bind CliInvocationContext / GlobalCliOptions
+  -> Resolve IAtomUICliCommandHandler<TOptions>
+  -> Execute domain service
+  -> Dispose command scope
 ```
 
-命令链路：
+MCP 长驻：
 
 ```text
-AtomUICliApplication
-  -> CliCommandParser.Parse(args)
-  -> CliCommandDescriptorCatalog 查找显式注册命令
-  -> 创建 CliInvocationContext
-  -> 创建 command IServiceScope
-  -> 解析 IAtomUICliCommandHandler<TOptions>
-  -> ExecuteAsync
+Root provider
+  -> Start McpStdioServer
+  -> For each JSON-RPC request:
+       Create invocation IServiceScope
+       Bind McpInvocationContext
+       Resolve tool handler / domain service
+       Dispose invocation scope
+```
+
+MCP server 可以长驻 root provider，但请求状态必须进入 invocation scope。任何 singleton MCP 服务都不能保存当前 request、当前项目路径或当前输出 buffer。
+
+### 10.7 Catalog 与 DI 的关系
+
+Catalog 是公开能力的事实来源，DI 是对象创建机制。两者不能混用。
+
+| 能力 | 事实来源 | DI 负责 |
+| --- | --- | --- |
+| 命令列表和命令元数据 | `CliCommandDescriptorCatalog` | 根据 descriptor 中的 handler 类型解析 handler。 |
+| MCP tool 列表和参数 schema | `McpToolDescriptorCatalog` | 解析 tool handler 或领域服务。 |
+| 诊断规则列表和 rule metadata | `DiagnosticRuleCatalog` | 解析 rule 实现或 rule runner。 |
+| 数据根 provider 列表 | `DataRootProviderCatalog` | 解析 provider 依赖的 reader、loader、auth checker。 |
+
+这样设计可以保证帮助输出、MCP tool list、错误检查、权限判断和 AOT 分析都基于不可变 catalog，而不是依赖 DI 容器里的运行时枚举结果。
+
+### 10.8 AOT 与 DI 约束
+
+DI 设计必须服务 AOT-first：
+
+- 使用显式泛型注册或 source generator 生成注册代码。
+- 命令 handler、MCP tool handler、诊断 rule 和输出 DTO 都必须有明确类型。
+- 不使用 Scrutor 类库扫描、attribute scanning 或命名约定注册。
+- 不使用动态代理、runtime code generation 或 `Expression.Compile()`。
+- JSON DTO 使用 source generated `JsonSerializerContext`。
+- options/configuration binding 优先使用 source generator 或显式 binder。
+- Native AOT 包中不允许通过外部程序集动态扩展 DI 容器。
+
+如果某个依赖需要反射或动态代码，必须隔离在非热路径，并有明确的 AOT analyzer 覆盖；不能让 Core Runtime、命令调度、MCP invocation 或元数据查询依赖该行为。
+
+### 10.9 容器验证与失败处理
+
+Host build 阶段应启用容器验证策略：
+
+- 验证 singleton、scoped、transient 的依赖图。
+- 验证 singleton 不依赖 scoped 服务。
+- 验证所有 command descriptor 对应的 handler 可解析。
+- 验证所有 MCP tool descriptor 对应的 handler 或领域服务可解析。
+- 验证所有诊断 rule descriptor 对应实现可解析。
+- 验证写入命令所需的 planner 和 executor 可解析。
+
+容器验证失败属于启动阶段错误，不能等到命令执行中才暴露。错误必须映射到模块或系统错误域，并进入统一清理流程。
+
+## 11. 命令架构
+
+命令面分为三类：
+
+| 分组 | 命令 | 所属模块 | 默认写入 |
+| --- | --- | --- | --- |
+| 知识查询 | `list`、`info`、`doc`、`demo`、`token`、`semantic`、`design.md`、`package`、`changelog` | Metadata & Knowledge | 否 |
+| 项目分析 | `env`、`doctor`、`usage`、`lint`、`migrate` | Project Analysis | 否 |
+| 集成与写入 | `mcp`、`setup`、`init`、`add`、`upgrade` | MCP Integration / Setup & Write Workflows | 仅显式写入 |
+
+命令执行链路：
+
+```text
+args
+  -> CliCommandParser
+  -> CliCommandDescriptorCatalog
+  -> CliInvocationContext
+  -> command IServiceScope
+  -> IAtomUICliCommandHandler<TOptions>
+  -> domain service
+  -> AtomUICliResult
   -> OutputWriter / ErrorWriter
   -> ExitCodeMapper
 ```
 
-MCP 长驻链路：
+命令 handler 的职责只包括参数校验、调用领域服务、选择输出模型和返回结果。命令 handler 不负责读取快照、不直接扫描项目、不直接写文件，也不直接计算进程退出码。
+
+## 12. Metadata & Knowledge 模块
+
+Metadata & Knowledge 模块是 CLI 的知识层。它把 AtomUI 生态信息组织成不可变索引，并向命令和 MCP tools 提供查询服务。
+
+核心能力：
+
+- 版本解析：根据目标版本选择对应快照。
+- 产品清单：描述产品、包、依赖、注册入口、替代关系、冲突关系和可见性。
+- 控件查询：查询控件基础信息、API、事件、方法、命名空间、注册要求和所属产品。
+- 文档查询：输出控件文档、设计文档和迁移说明。
+- 示例查询：列出或输出示例代码。
+- Token 查询：查询全局 Token 和控件 Token。
+- Semantic 查询：查询 semantic parts、模板结构摘要和可定制节点。
+- 包查询：查询包依赖、兼容性、注册方式和冲突关系。
+- 变更记录查询：查询版本范围或控件维度的变更记录。
+
+数据来源分为内置公开快照和外部数据根。内置快照随 tool 包发布，外部数据根用于内部或商业数据扩展。查询服务不通过运行时反射补齐缺失数据；快照缺失时返回结构化错误。
+
+## 13. 元数据模型
+
+元数据快照围绕版本、产品、控件、包、Token、示例、文档、变更记录和迁移信息建模。
 
 ```text
-dotnet atomui mcp
-  -> 同一个 GenericHost root provider
-  -> McpStdioServer
-  -> McpToolDescriptorCatalog 查找 tool
-  -> 每次 tool invocation 创建独立 IServiceScope
-  -> McpToolHandler 调用 Metadata / ProjectAnalysis 服务
-  -> 返回 JSON-RPC response
+MetadataSnapshot
+  ├── VersionIndex
+  ├── ProductCatalog
+  ├── PackageCatalog
+  ├── ControlCatalog
+  ├── TokenCatalog
+  ├── DemoCatalog
+  ├── DocumentationCatalog
+  ├── ChangelogCatalog
+  └── MigrationCatalog
 ```
 
-DI 生命周期：
+产品模型表达包边界：
 
-| 生命周期 | 服务类型 |
+- 产品 ID 和显示名。
+- public、commercial、internal 等可见性。
+- NuGet package IDs。
+- 平台和目标框架约束。
+- 依赖包、冲突包和替代关系。
+- 初始化或注册入口。
+
+控件模型表达可查询能力：
+
+- 控件名称、中文名称、分类、所属产品和所属包。
+- CLR namespace 和 XAML namespace。
+- 引入版本、废弃版本和替代控件。
+- 属性、事件、方法、命令、AttachedProperty、StyledProperty、DirectProperty。
+- TemplatePart、semantic parts、Token 和示例引用。
+- 注册要求和使用限制。
+
+快照必须显式携带 schema version。运行时只读取兼容 schema；不兼容时返回数据错误，不尝试猜测字段含义。
+
+## 14. Project Analysis 模块
+
+Project Analysis 模块把用户项目转换成可诊断模型，然后运行规则集输出结构化 findings。
+
+输入范围：
+
+- solution、project 和目录入口。
+- 项目文件、Central Package Management 文件、lock 文件。
+- XAML / AXAML 文件。
+- C# 源码中与 AtomUI 注册和控件使用相关的片段。
+- 发布配置中与 AOT、trimming、single-file 相关的配置。
+
+内部模型：
+
+```text
+ProjectAnalysisContext
+  ├── ProjectGraph
+  ├── PackageReferenceGraph
+  ├── XamlUsageIndex
+  ├── CSharpRegistrationIndex
+  ├── PublishOptions
+  └── DiagnosticBag
+```
+
+诊断规则：
+
+| 规则 | 目标 |
 | --- | --- |
-| Singleton | `ModuleHost`、命令 descriptor catalog、MCP tool catalog、产品 schema、不可变 metadata index、格式化器注册表、错误码映射、日志基础设施。 |
-| Scoped | `CliInvocationContext`、全局选项、输出目标、诊断收集器、项目分析上下文、MCP tool invocation context。 |
-| Transient | 命令 handler、需要短生命周期状态的扫描器、迁移步骤执行器。 |
+| PackageCompatibilityRule | 检查 AtomUI、Avalonia、TargetFramework 和产品包版本兼容性。 |
+| PackageConflictRule | 检查互斥包、替代包和重复包。 |
+| RegistrationRule | 检查引用包后是否调用对应注册入口。 |
+| XamlNamespaceRule | 检查 XAML 命名空间声明和控件使用。 |
+| AotReadinessRule | 检查 Native AOT、trimming、动态访问和显式注册风险。 |
+| DeprecatedApiRule | 检查废弃控件、属性和注册入口。 |
+| GeneratedFileRule | 提醒不要手工修改 generated files。 |
 
-规则：
+项目分析只读取项目文件和源码文本，不加载用户项目程序集，不执行用户代码。
 
-- `IServiceProvider` 只能在 `AtomUI.Cli.Hosting` 的调度边界使用，业务层禁止把它当 service locator。
-- 命令注册必须来自 CLI 模块 contribution catalog，禁止扫描程序集查找 handler。
-- MCP tool 注册必须来自 CLI 模块 contribution catalog，禁止运行时反射发现 tool。
-- Host defaults 必须最小化，只启用明确需要的 configuration、logging 和 lifetime provider。
-- CLI 只读命令不能因 Host 初始化访问网络。
-- `CancellationToken` 从 Host lifetime、Ctrl+C、命令 scope 和 MCP request context 统一传播。
-- 模块初始化失败必须转换为 `ATOMUICLI_MOD001` 或 `ATOMUICLI_MOD002` 并阻止进入命令执行。
+## 15. MCP Integration 模块
 
-### 8.5 AOT-first 运行时约束
+MCP Integration 模块将 CLI 的只读能力映射为 MCP tools，供 Agent 在开发过程中调用。
 
-AOT-first 是运行时和发布的默认约束，不是发布阶段补丁。
+MCP 设计原则：
+
+- 默认只暴露只读 tool。
+- tool 名称和参数 schema 稳定。
+- 每次 tool invocation 创建独立 DI scope。
+- MCP 响应使用与 CLI JSON 输出一致的数据 DTO。
+- MCP transport 错误、tool 参数错误和领域错误都映射到统一错误码。
+
+首批 tool：
+
+| Tool | 对应能力 |
+| --- | --- |
+| `atomui_list` | 控件、产品、分类和包列表。 |
+| `atomui_info` | 控件 API 和注册要求查询。 |
+| `atomui_doc` | 控件文档查询。 |
+| `atomui_demo` | 示例查询。 |
+| `atomui_token` | Token 查询。 |
+| `atomui_semantic` | semantic parts 查询。 |
+| `atomui_package` | 包信息和冲突查询。 |
+| `atomui_changelog` | 变更记录查询。 |
+| `atomui_doctor` | 项目诊断。 |
+
+写入类能力不作为默认 MCP tool 暴露。未来如需暴露写入能力，必须引入显式确认协议和可审计写入计划。
+
+## 16. Setup & Write Workflows 模块
+
+Setup & Write Workflows 模块负责可能修改用户项目或本地工具配置的命令。
+
+写入原则：
+
+- 默认 dry-run。
+- 只有用户显式传入写入选项时才修改文件。
+- 所有写入先生成计划，再执行计划。
+- 写入计划必须列出目标文件、变更类型、冲突风险和回滚建议。
+- 文件冲突、不可写、配置格式不支持时返回结构化错误。
+- 写入结果必须能以 JSON 输出，便于 CI 和 Agent 审计。
+
+命令职责：
+
+| 命令 | 职责 |
+| --- | --- |
+| `setup` | 检查并生成 MCP / Agent 工具配置计划。 |
+| `init` | 检查 AtomUI 项目初始化状态，生成缺失配置计划。 |
+| `add` | 包装 AtomUI 生态包添加流程，并根据产品清单提示注册入口。 |
+| `upgrade` | 给出 CLI、AtomUI 包和数据快照升级建议。 |
+
+Setup 模块依赖 Metadata 模块获取产品和包规则，依赖 Project Analysis 模块判断当前项目状态。
+
+## 17. Commercial Data 模块
+
+Commercial Data 模块扩展 Metadata 模块的数据根能力，用于支持商业控件项目。
+
+核心边界：
+
+- 商业数据以外部数据根或编译进包的数据快照接入。
+- 商业控件使用与公开控件相同的产品、包、控件、Token、示例和文档模型。
+- 未配置商业数据时，CLI 只能输出包级安装、注册和数据根配置建议，不能伪造控件 API。
+- 商业数据错误必须说明缺失的是数据根、授权状态、schema 版本还是产品 ID。
+- 公开快照不得包含商业私有 API、内部示例或未授权文档。
+
+Commercial Data 模块不要求新增独立命令。现有 `list`、`info`、`doc`、`demo`、`token`、`semantic`、`package` 和 `doctor` 通过产品过滤和数据根合并自然支持商业控件。
+
+## 18. 数据流设计
+
+知识查询数据流：
+
+```text
+Command / MCP Tool
+  -> MetadataQueryService
+  -> VersionResolver
+  -> DataRootResolver
+  -> SnapshotLoader
+  -> Immutable Index
+  -> Query Result DTO
+```
+
+项目诊断数据流：
+
+```text
+doctor / lint / usage
+  -> ProjectLocator
+  -> ProjectModelReader
+  -> PackageReferenceGraph
+  -> XamlUsageIndex + CSharpRegistrationIndex
+  -> DiagnosticRuleRunner
+  -> Diagnostic Result DTO
+```
+
+写入工作流数据流：
+
+```text
+setup / init / add / upgrade
+  -> CurrentStateReader
+  -> Metadata Rules
+  -> WritePlanBuilder
+  -> ConflictChecker
+  -> DryRun Output 或 WriteExecutor
+```
+
+MCP 数据流：
+
+```text
+MCP Request
+  -> McpToolDescriptorCatalog
+  -> invocation IServiceScope
+  -> Domain Service
+  -> Result DTO
+  -> JSON-RPC Response
+```
+
+## 19. 错误与输出架构
+
+错误码、诊断码、退出码、stdout/stderr 边界和 JSON 错误 envelope 统一遵守 [AtomUI Cli 错误码标准](../commands/error-code-standard.md)。
+
+架构约束：
+
+- 命令 handler 返回 `AtomUICliResult`，不直接返回进程退出码。
+- 退出码只由 `IExitCodeMapper` 统一计算。
+- 成功结果写 stdout。
+- 错误、诊断和调试日志写 stderr。
+- JSON 输出必须使用稳定 DTO，不输出异常对象或未定义匿名结构。
+- 模块生命周期失败必须映射为模块域错误码。
+- 数据缺失、schema 不兼容、查询目标不存在、项目读取失败和写入冲突必须使用各自领域错误码。
+
+## 20. AOT-first 架构约束
+
+AOT-first 是架构约束，不是发布阶段补丁。
 
 允许：
 
-- 显式泛型 DI 注册，例如 `AddSingleton<TService, TImplementation>()`。
-- `AtomUI.Base.Generator` 生成模块 catalog。
-- CLI 模块 contribution 生成或显式注册 command/tool descriptor。
-- Source generator 生成 metadata catalog、command catalog、MCP tool catalog 和 JSON serialization context。
-- `System.Text.Json` source generation。
-- 强类型 options 和 configuration binding source generator。
+- 显式泛型 DI 注册。
+- source generator 生成模块 catalog、命令 catalog、MCP tool catalog 和 JSON serialization context。
+- 显式 DTO、显式 options、显式命令 handler。
+- 不可变数据索引和预计算查找表。
 
 禁止：
 
 - `Assembly.GetTypes()`、attribute scanning、目录程序集扫描。
-- `Activator.CreateInstance` 作为默认对象创建路径。
 - 运行时拼接类型名、成员名或泛型类型来构造服务。
+- `Activator.CreateInstance` 作为默认对象创建路径。
 - `Expression.Compile()`、Reflection.Emit 或动态代码生成。
-- 没有 AOT 注解和测试覆盖的 reflection fallback。
-- 在热路径按字符串查找命令、控件成员、JSON type metadata 或 MCP tool。
-- 在 Native AOT 包中动态加载外部模块程序集。
+- Native AOT 包中动态加载外部模块程序集。
+- 在查询热路径通过反射读取控件 API。
 
-例外边界：
+CoreCLR fallback 包不能成为绕过 AOT 设计的理由。fallback 只用于平台覆盖，不承载 AOT-incompatible 主实现。
 
-- 兼容性迁移、错误诊断或测试底层可以使用受控 reflection，但必须标注清晰边界，并有 AOT analyzer 覆盖。
-- CoreCLR fallback 包不能成为绕过 AOT 设计的理由；fallback 只用于平台覆盖，不承载 AOT-incompatible 主实现。
+## 21. 安全与可控性
 
-## 9. 命令矩阵
+- 查询命令默认离线运行。
+- 项目分析不执行用户代码。
+- 写入命令默认不写文件。
+- 外部数据根只作为数据输入，不作为代码加载入口。
+- 商业数据与公开数据通过 visibility、product ID 和数据根边界隔离。
+- 所有 Agent 可调用能力必须有稳定 schema 和明确错误码。
+- CLI 不把本地路径、环境变量或授权信息写入公开快照。
 
-### 9.1 知识查询
+## 22. 扩展方式
 
-| 命令 | 说明 |
+新增能力必须选择明确扩展点：
+
+| 扩展目标 | 扩展方式 |
 | --- | --- |
-| `dotnet atomui list` | 列出控件、产品、分类、包和引入版本。 |
-| `dotnet atomui info <Control>` | 查询控件 API、属性、事件、方法、默认值、命名空间和注册要求。 |
-| `dotnet atomui doc <Control>` | 输出完整 Markdown 文档。 |
-| `dotnet atomui demo <Control> [name]` | 列出或输出示例代码。 |
-| `dotnet atomui token [Control]` | 查询全局 Token 或控件 Token。 |
-| `dotnet atomui semantic <Control>` | 查询 semantic parts、模板结构摘要和可定制节点。 |
-| `dotnet atomui design.md` | 输出 AtomUI 设计语言文档。 |
-| `dotnet atomui package [PackageId]` | 查询 NuGet 包、依赖、注册方式、替代关系和冲突关系。 |
-| `dotnet atomui changelog [range] [Control]` | 查询版本变更或控件变更。 |
+| 新产品或商业控件 | 增加产品清单和元数据快照，必要时增加商业数据根。 |
+| 新查询命令 | 在对应模块中贡献 command descriptor，并复用领域服务。 |
+| 新项目诊断 | 增加 diagnostic rule，并登记规则输出 DTO 和错误码。 |
+| 新 MCP tool | 在 MCP 模块中贡献 tool descriptor，复用既有命令或领域服务 DTO。 |
+| 新写入流程 | 增加 write plan builder 和 executor，默认 dry-run。 |
+| 新输出格式 | 扩展 output writer，不改变领域服务结果模型。 |
 
-### 9.2 项目分析
+扩展不得绕过模块贡献点，不得通过运行时扫描把能力挂进 CLI。
 
-| 命令 | 说明 |
-| --- | --- |
-| `dotnet atomui env [path]` | 收集 SDK、TargetFramework、OS、Avalonia、AtomUI 和包版本信息。 |
-| `dotnet atomui doctor [path]` | 诊断依赖、包冲突、注册缺失、版本兼容和 AOT 风险。 |
-| `dotnet atomui usage [path]` | 扫描 XAML/C# 中的 AtomUI 控件使用统计。 |
-| `dotnet atomui lint [path]` | 检查废弃 API、错误包组合、XAML 命名空间和最佳实践。 |
-| `dotnet atomui migrate <from> <to>` | 输出迁移清单、破坏性变更和 Agent 迁移提示。 |
+## 23. 典型用户流程
 
-### 9.3 集成与写入
-
-| 命令 | 说明 |
-| --- | --- |
-| `dotnet atomui mcp` | 启动 stdio MCP server。 |
-| `dotnet atomui setup` | 为 Codex、Claude、Cursor、VS Code 写入 MCP/Skill 配置。 |
-| `dotnet atomui init` | 检查并提示项目初始化步骤，P2 再支持写入。 |
-| `dotnet atomui add <package>` | 包装 AtomUI 生态包安装，P2 实现。 |
-| `dotnet atomui upgrade` | 输出 CLI 或 AtomUI 包升级建议。 |
-
-写入命令默认 dry-run 或明确要求 `--write`。
-
-## 10. 元数据模型
-
-### 10.1 快照
-
-```json
-{
-  "schemaVersion": 1,
-  "version": "6.0.6",
-  "majorVersion": "v6",
-  "products": [],
-  "controls": [],
-  "packages": [],
-  "globalTokens": [],
-  "changelog": [],
-  "migrationGuides": []
-}
-```
-
-规则：
-
-- 开发仓库保留 `.json`，便于 diff。
-- 发布包使用 `.json.gz`，降低包体积。
-- Loader 同时支持 plain JSON 和 gzip JSON。
-- `versions.json` 是版本解析源，所有索引项必须指向存在的快照。
-- schema 变更必须提升 `schemaVersion`。
-
-### 10.2 产品清单
-
-产品清单定义包边界、注册入口、替代关系、冲突关系和可见性。
-
-```json
-{
-  "id": "desktop",
-  "displayName": "AtomUI Desktop Controls",
-  "visibility": "public",
-  "packageIds": ["AtomUI.Desktop.Controls"],
-  "platforms": ["desktop"],
-  "requires": ["AtomUI.Core", "Avalonia"],
-  "registrationMethods": ["UseDesktopControls"],
-  "conflicts": []
-}
-```
-
-可选包示例：
-
-```json
-{
-  "id": "datagrid",
-  "displayName": "AtomUI Desktop DataGrid",
-  "visibility": "public",
-  "packageIds": ["AtomUI.Desktop.Controls.DataGrid"],
-  "requires": ["AtomUI.Desktop.Controls"],
-  "registrationMethods": ["UseDesktopDataGrid"]
-}
-```
-
-商业包使用同一模型，不新增命令。若商业数据未配置，CLI 只能输出包级安装和注册建议，不能伪造控件 API。
-
-### 10.3 控件模型
-
-```json
-{
-  "name": "Button",
-  "nameZh": "按钮",
-  "productId": "desktop",
-  "category": "general",
-  "packageId": "AtomUI.Desktop.Controls",
-  "namespace": "AtomUI.Desktop.Controls",
-  "xamlNamespace": "https://atomui.net",
-  "since": "6.0.0",
-  "descriptionZh": "用于触发一个操作。",
-  "registration": {
-    "required": true,
-    "methods": ["UseDesktopControls"]
-  },
-  "api": {
-    "properties": [],
-    "events": [],
-    "methods": []
-  },
-  "demos": [],
-  "tokens": [],
-  "semanticParts": []
-}
-```
-
-API 成员覆盖：
-
-- CLR property
-- StyledProperty
-- DirectProperty
-- AttachedProperty
-- RoutedEvent
-- ICommand 相关属性
-- TemplatePart
-- semantic part
-- 控件 Token
-- 注册方法
-
-## 11. 元数据生成管线
-
-元数据构建器以显式配置为入口：
-
-```bash
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- generate --config docs/AI/atomui-cli-metadata.config.json
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- verify --config docs/AI/atomui-cli-metadata.config.json
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- compress --config docs/AI/atomui-cli-metadata.config.json
-```
-
-输入类型：
-
-- 控件源文档
-- Agent 文档输出
-- 示例源码和示例元数据
-- 控件源码索引
-- 变更记录
-- NuGet README
-- 版本 props
-- 产品清单
-
-输出：
+控件知识查询：
 
 ```text
-data/versions.json
-data/products.json
-data/v6.json
-data/v6.0.6.json
-output/data/v6.json.gz
-output/data/v6.0.6.json.gz
-```
-
-生成器职责：
-
-- 合并产品、包、控件、API、Token、示例、文档和变更记录。
-- 校验 schema、可见性、链接、示例引用和版本索引。
-- 保证公开快照不包含内部或商业私有内容。
-- 保证每个 `versions.json` 索引项都有对应快照。
-
-生成器不做：
-
-- 不联网查询包源。
-- 不运行用户项目。
-- 不从运行时程序集反射提取 API。
-- 不根据控件名称发明 semantic parts。
-
-## 12. 项目分析
-
-### 12.1 输入范围
-
-项目分析默认扫描当前目录，也支持显式传入 `.sln`、`.slnx`、`.csproj` 或目录。
-
-扫描文件：
-
-- `.sln`、`.slnx`
-- `.csproj`
-- `Directory.Build.props`
-- `Directory.Packages.props`
-- `packages.lock.json`
-- `.axaml`、`.xaml`
-- `.cs`
-- publish profile 和 app manifest，仅用于发布/AOT 诊断
-
-跳过目录：
-
-- `bin/`
-- `obj/`
-- `output/`
-- `outputs/`
-- `.git/`
-- `.idea/`
-- `.vs/`
-- `.referenceprojects/`
-- `GeneratedFiles/`
-
-### 12.2 诊断规则
-
-| 规则 | 说明 |
-| --- | --- |
-| `PackageCompatibilityRule` | 检查 Avalonia、AtomUI、TargetFramework 版本兼容。 |
-| `PackageConflictRule` | 检查互斥包、替代包和重复包。 |
-| `RegistrationRule` | 检查引用包后是否调用对应注册方法。 |
-| `XamlNamespaceRule` | 检查 XAML 命名空间声明和控件使用。 |
-| `AotReadinessRule` | 检查 NativeAOT、trimming、动态访问和显式注册风险。 |
-| `DeprecatedApiRule` | 检查废弃控件、属性和注册入口。 |
-| `GeneratedFileRule` | 提醒不要手工修改 generated files。 |
-
-### 12.3 输出
-
-```json
-{
-  "project": "/repo/App/App.csproj",
-  "summary": {
-    "errors": 1,
-    "warnings": 2,
-    "infos": 3
-  },
-  "diagnostics": [
-    {
-      "code": "ATOMUICLI_PKG003",
-      "severity": "error",
-      "message": "The project references packages that are declared as conflicting in the AtomUI product catalog.",
-      "file": "App.csproj",
-      "suggestion": "Keep one package according to the product catalog replacement rule."
-    }
-  ]
-}
-```
-
-## 13. MCP 与 Agent 集成
-
-MCP tools：
-
-- `atomui_list`
-- `atomui_info`
-- `atomui_doc`
-- `atomui_demo`
-- `atomui_token`
-- `atomui_design_md`
-- `atomui_semantic`
-- `atomui_package`
-- `atomui_changelog`
-- `atomui_doctor`
-
-MCP tools 默认只读。写入类能力不暴露为默认 MCP tool。
-
-Skill 模板要求 Agent：
-
-- 写 AtomUI 控件代码前调用 `dotnet atomui info`。
-- 写复杂示例前调用 `dotnet atomui demo`。
-- 做主题或样式前调用 `dotnet atomui token` 和 `dotnet atomui semantic`。
-- 处理项目问题前调用 `dotnet atomui doctor` 和 `dotnet atomui env`。
-- 做包变更前调用 `dotnet atomui package` 检查依赖和冲突。
-
-## 14. 错误码与退出码
-
-错误码、诊断码、退出码、stdout/stderr 边界和 JSON 错误 envelope 统一遵守 [AtomUI Cli 错误码标准](../commands/error-code-standard.md)。`AtomUICliApplication` 和命令 handler 不直接返回进程退出码，退出码只由 `IExitCodeMapper` 根据 `AtomUICliResult`、错误码和诊断 severity 聚合计算。
-
-错误码格式：
-
-```text
-ATOMUICLI_<DOMAIN><NNN>
-```
-
-已登记 domain：
-
-| 前缀 | 范围 |
-| --- | --- |
-| `ATOMUICLI_SYS` | 未分类异常、取消、运行时兜底错误。 |
-| `ATOMUICLI_ARG` | 参数和命令错误。 |
-| `ATOMUICLI_MOD` | 模块解析、模块生命周期、模块 contribution 错误。 |
-| `ATOMUICLI_DATA` | 元数据加载、schema、数据根错误。 |
-| `ATOMUICLI_CTRL` | 控件查询错误。 |
-| `ATOMUICLI_PKG` | 包查询、包兼容和包冲突错误。 |
-| `ATOMUICLI_PRJ` | 项目读取和扫描错误。 |
-| `ATOMUICLI_AOT` | AOT、trim、single-file 相关诊断。 |
-| `ATOMUICLI_MCP` | MCP transport 或 tool 错误。 |
-| `ATOMUICLI_SETUP` | setup 写入错误。 |
-
-退出码摘要：
-
-| 退出码 | 说明 |
-| --- | --- |
-| `0` | 成功。 |
-| `1` | 未分类异常、模块失败、MCP 运行时失败、取消。 |
-| `2` | 参数错误或命令不存在。 |
-| `3` | 查询目标不存在或存在歧义。 |
-| `4` | 数据不可用、schema 不兼容、项目文件或源码无法读取。 |
-| `5` | 项目诊断、包冲突、AOT 或 lint finding 达到失败阈值。 |
-| `6` | 写入计划冲突、配置读取失败或文件写入失败。 |
-
-## 15. 打包与发布
-
-AtomUI Cli 使用 .NET SDK 10 的 RID-specific tool packaging。发布目标是同一个 NuGet Tool 包名下提供平台优化包：
-
-- top-level pointer package：`AtomUI.Cli.<version>.nupkg`。
-- Native AOT RID 包：`AtomUI.Cli.osx-arm64.<version>.nupkg`、`AtomUI.Cli.linux-x64.<version>.nupkg`、`AtomUI.Cli.linux-arm64.<version>.nupkg`、`AtomUI.Cli.win-x64.<version>.nupkg`。
-- CoreCLR fallback 包：`AtomUI.Cli.any.<version>.nupkg`。
-
-工具项目配置：
-
-```xml
-<PropertyGroup>
-  <PackAsTool>true</PackAsTool>
-  <PublishAot>true</PublishAot>
-  <ToolCommandName>dotnet-atomui</ToolCommandName>
-  <ToolPackageRuntimeIdentifiers>osx-arm64;linux-x64;linux-arm64;win-x64;any</ToolPackageRuntimeIdentifiers>
-</PropertyGroup>
-```
-
-AOT 包装规则：
-
-- Native AOT RID 包必须在目标 OS 相同的平台构建；Linux 包通过 Linux runner 或 .NET SDK AOT container 构建。
-- `any` fallback 包使用 `-p:PublishAot=false` 构建，保持跨平台可安装。
-- 所有 RID 包、`any` fallback 包和 pointer package 必须使用完全相同版本号。
-- 发布顺序是 RID 包和 `any` fallback 先发布，pointer package 最后发布。
-- CLI 安装方式对用户保持不变，平台选择由 .NET CLI 完成。
-
-Release 流程：
-
-```text
-dotnet test
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- generate --config docs/AI/atomui-cli-metadata.config.json
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- verify --config docs/AI/atomui-cli-metadata.config.json
-dotnet run --project tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj -- compress --config docs/AI/atomui-cli-metadata.config.json
-dotnet pack --configuration Release
-dotnet pack --configuration Release -r osx-arm64
-dotnet pack --configuration Release -r linux-x64
-dotnet pack --configuration Release -r linux-arm64
-dotnet pack --configuration Release -r win-x64
-dotnet pack --configuration Release -r any -p:PublishAot=false
-install local platform package as tool
-dotnet atomui list --format json
 dotnet atomui info Button --format json
-dotnet atomui doctor <fixture> --format json
-publish to NuGet
+  -> Metadata 模块选择目标版本快照
+  -> 控件索引解析 Button
+  -> 返回 API、Token、semantic parts、示例和注册要求
 ```
 
-本地开发机只要求完成当前 OS RID 的 AOT pack smoke；CI 发布流水线必须覆盖全部声明 RID。
+项目诊断：
 
-NuGet Tool 包必须包含：
+```text
+dotnet atomui doctor ./src/App --format json
+  -> Project Analysis 模块读取项目模型
+  -> Metadata 模块提供产品和包规则
+  -> 诊断规则输出 findings
+  -> ExitCodeMapper 根据 severity 计算退出码
+```
 
-- CLI 可执行入口。
-- 编译进包的 generated module catalog。
-- 压缩后的公开快照。
-- `versions.json`。
-- `products.json`。
-- Skill 模板。
-- MCP prompt/tool metadata。
-- README、LICENSE、icon。
-- Native AOT 包中不得包含非必要 runtime 配置、未压缩临时数据和 generated debug files。
+Agent 集成：
 
-## 16. 测试策略
+```text
+dotnet atomui mcp
+  -> MCP 模块启动 stdio server
+  -> Agent 调用 atomui_info / atomui_demo / atomui_doctor
+  -> 每次调用复用同一应用宿主但使用独立 invocation scope
+```
 
-### 16.1 单元测试
+商业控件查询：
 
-- HostApplicationBuilder service registration
-- AtomUICliApplication state machine
-- AtomUICliApplication drives every module lifecycle hook in order
-- AtomUI.Modularity generated module catalog
-- ModuleHost bootstrap
-- Module service descriptor to IServiceCollection adapter
-- CLI command contribution phase
-- MCP tool contribution phase
-- Module failure to ATOMUICLI_MOD error mapping
-- DI scope lifecycle
-- Command descriptor catalog
-- Command dispatcher
-- VersionResolver
-- MetadataSnapshotLoader
-- ProductCatalog
-- FuzzyNameResolver
-- JsonOutputWriter
-- ErrorWriter
-- PackageReferenceReader
-- XamlUsageScanner
-- DiagnosticRules
+```text
+dotnet atomui list --product datagrid --data-root <commercial-data>
+  -> Commercial Data 模块登记外部数据根
+  -> Metadata 模块合并可见产品快照
+  -> 查询命令输出商业控件清单或结构化数据错误
+```
 
-Host/DI 测试要求：
+## 24. 文档关系
 
-- root provider 可以 `ValidateOnBuild`。
-- `Program.Main` 不直接调用 `ModuleHost`，只通过 `AtomUICliApplication` 运行。
-- `AtomUICliApplication` 按固定顺序调用 Resolve/Create/PreConfigure/Configure/PostConfigure/Freeze/CLI contribution/Initialize/Shutdown。
-- 命令失败、参数错误、取消和 MCP server 退出都必须触发 `IHost.StopAsync()` 和 `ModuleHost.ShutdownAsync()`。
-- `AtomUICliModuleCatalog.CreateRegistrations()` 能创建所有内置模块 registration。
-- `ModuleHost` 能解析 required dependency closure 并按拓扑顺序执行服务配置。
-- CLI 专属 contribution phase 能冻结 command、MCP tool 和 diagnostic rule catalog。
-- 所有公开命令 handler 均可通过 DI 解析。
-- 每次命令执行都会创建并释放 command scope。
-- MCP 每次 tool invocation 都创建独立 scope。
-- 只读命令的 Host 初始化不会访问网络。
-- 业务服务不接收 `IServiceProvider`。
-- 模块生命周期失败会返回 `ATOMUICLI_MOD001` 或 `ATOMUICLI_MOD002`。
-
-### 16.2 快照测试
-
-- `list`
-- `info`
-- `doc`
-- `demo`
-- `token`
-- `semantic`
-- `package`
-- `changelog`
-- 错误输出
-
-### 16.3 Pack smoke test
-
-- `dotnet pack --configuration Release`
-- 当前 OS RID 的 `dotnet pack --configuration Release -r <RID>`。
-- `dotnet pack --configuration Release -r any -p:PublishAot=false`。
-- 从 `output/Nuget/Release` 安装本地 tool。
-- 验证 `dotnet atomui --version`。
-- 验证 `dotnet atomui list --format json`。
-- 验证 `dotnet atomui info Button --format json`。
-- 验证包中不存在未压缩的临时输出目录。
-- 验证 Native AOT 包运行时输出 compilation mode 或诊断 metadata，证明当前 RID 使用 AOT binary。
-
-### 16.4 AOT 与 trim 验证
-
-- Native AOT publish / pack 不能产生未处理的 AOT warning。
-- trim analyzer warning 必须失败。
-- `AtomUI.Base.Generator` 输出的 module catalog 必须参与 AOT smoke。
-- command catalog、MCP tool catalog 和 JSON metadata 必须来自模块 contribution、显式注册或 source generator。
-- 禁止新增未标注的 runtime reflection fallback。
-- AOT smoke fixture 覆盖 `list`、`info`、`package`、`doctor --format json` 和 `mcp` 初始化。
-
-### 16.5 MetadataBuilder verify
-
-- 源文档缺失时失败。
-- Agent 文档输出过期时失败。
-- 示例引用失效时失败。
-- 产品清单冲突时失败。
-- 公开快照包含非公开内容时失败。
-- `versions.json` 指向不存在快照时失败。
-
-## 17. 分阶段路线
-
-### P0：工程骨架和离线查询
-
-- 建立 build system。
-- 创建 `global.json`、`Directory.Build.props`、`Directory.Packages.props`、`build/*.props`。
-- 创建 `src/`、`tools/`、`tests/`、`docs/`、`data/`。
-- 引入 `AtomUI.Base` / `AtomUI.Base.Generator`。
-- 实现 `AtomUI.Cli.Modularity`、`AtomUICliModule`、CLI 专属 contribution phase。
-- 实现 `AtomUICliApplication`、应用状态机、模块钩子统一调用、GenericHost 入口、模块启动链路、应用级 DI、命令 descriptor catalog、全局选项和命令 scope。
-- 实现元数据加载和基础查询命令。
-- 生成首批公开快照。
-- 完成当前 OS RID 的 Native AOT pack smoke。
-
-### P1：项目分析和 MCP
-
-- 实现 `env`、`doctor`、`usage`、`lint`。
-- 实现项目文件、XAML、C# 注册扫描。
-- 实现 MCP 只读 tools，并通过 `AtomUICliMcpModule` contribution catalog 注册。
-- 实现 Skill 模板和 `setup --dry-run`。
-- 引入 JSON source generation 和 configuration binding source generation。
-
-### P2：商业数据和迁移
-
-- 支持 `--data-root` 和数据根登记。
-- 接入商业产品快照。
-- 实现 `migrate`。
-- 实现 `setup --write`、`init --write` 和 `add`。
-
-### P3：发布自动化
-
-- MetadataBuilder verify 进入 CI。
-- 本地 tool 安装 smoke test 进入 CI。
-- 多 OS / 多 RID Native AOT pack 进入 CI。
-- `any` CoreCLR fallback pack 进入 CI。
-- NuGet 发布 gate。
-- 数据 schema 兼容测试。
-- MCP tool contract 测试。
-
-## 18. 验收标准
-
-P0 验收：
-
-- `dotnet tool install --global AtomUI.Cli` 后可运行 `dotnet atomui list`。
-- `dotnet atomui info Button --format json` 输出稳定 JSON。
-- 查询不存在控件时输出结构化错误和拼写建议。
-- 不联网也能查询内置公开快照。
-- CLI 入口通过 `AtomUICliApplication` 启动，`Program.Main` 不直接管理模块或 DI。
-- `AtomUICliApplication` 同时持有 `ModuleHost` 和 `IHost`，并统一调用所有模块通用钩子和 CLI 专属钩子。
-- 内置模块由 `AtomUI.Modularity` generated catalog 注册，`ModuleHost` 完成依赖解析和服务配置。
-- 所有命令 handler 通过模块 contribution catalog 注册，并通过应用级 DI 解析。
-- 当前 OS RID 可以完成 Native AOT pack smoke，且无未处理 AOT/trim warning。
-- 所有构建产物进入 `output/`。
-- 架构文档位于 `docs/architecture/`。
-
-P1 验收：
-
-- `doctor` 能识别包冲突、注册缺失和 XAML 命名空间问题。
-- `usage` 能统计 XAML/C# 中的 AtomUI 控件使用。
-- `mcp` 能暴露首批只读 tools，并通过模块 contribution catalog 和 per-invocation DI scope 处理请求。
-- `setup` 支持 dry-run/check。
-
-P2 验收：
-
-- 外部数据根可加载商业产品快照。
-- 商业数据不可用时返回结构化错误和配置建议。
-- `migrate` 能输出版本迁移清单。
+- 模块索引和模块详细设计见 [docs/modules](../modules/overview.md)。
+- 命令索引和命令详细设计见 [docs/commands](../commands/overview.md)。
+- 错误码标准见 [docs/commands/error-code-standard.md](../commands/error-code-standard.md)。
+- 工程实施计划、文档重构计划和后续实现清单放在 `docs/superpowers/plans/`。
