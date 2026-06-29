@@ -62,4 +62,25 @@ public sealed class OutputWriterTests
 
         Assert.Equal($"ATOMUICLI_ARG002: Invalid format.{Environment.NewLine}", stderr.ToString());
     }
+
+    [Fact]
+    public async Task ErrorWriterWritesSuggestionTextToStderr()
+    {
+        await using var stderr = new StringWriter();
+        var writer = new ConsoleErrorWriter(stderr, new JsonOutputSerializer());
+        var error = new AtomUICliError(
+            AtomUICliErrorCodes.ArgumentCommandNotFound,
+            AtomUICliSeverity.Error,
+            "Command 'inf' is not registered.",
+            "Run `dotnet atomui help info`.",
+            "parse",
+            null,
+            null);
+
+        await writer.WriteErrorAsync("help", error, OutputFormat.Text, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            $"ATOMUICLI_ARG003: Command 'inf' is not registered.{Environment.NewLine}Run `dotnet atomui help info`.{Environment.NewLine}",
+            stderr.ToString());
+    }
 }

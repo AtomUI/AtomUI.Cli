@@ -47,4 +47,30 @@ public sealed class ModuleActivationTests
         Assert.False(result.IsSuccess);
         Assert.Equal(AtomUICliErrorCodes.ArgumentCommandNotFound, result.Error?.Code);
     }
+
+    [Fact]
+    public void PreParserMapsCommandHelpShortcutToHelpCommand()
+    {
+        var catalog = CommandManifestCatalog.CreateBuiltIn();
+        var parser = new CommandPreParser();
+
+        var result = parser.Parse(["info", "--help"], catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal("help", result.Manifest.Name);
+    }
+
+    [Fact]
+    public void PreParserMapsHelpShortcutAfterGlobalOptionsToHelpCommand()
+    {
+        var catalog = CommandManifestCatalog.CreateBuiltIn();
+        var parser = new CommandPreParser();
+
+        var result = parser.Parse(["--format", "json", "-h"], catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal("help", result.Manifest.Name);
+    }
 }

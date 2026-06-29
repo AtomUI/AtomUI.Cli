@@ -24,58 +24,25 @@ public sealed class CliCommandParser
         while (index < args.Count)
         {
             var token = args[index];
+            if (token is "--help" or "-h")
+            {
+                break;
+            }
+
             if (!token.StartsWith("--", StringComparison.Ordinal))
             {
                 break;
             }
 
-            switch (token)
+            var consumed = TryConsumeGlobalOption(args, ref index, ref global, errorOnUnknown: true, out var error);
+            if (error is not null)
             {
-                case "--format":
-                    if (!TryReadValue(args, ref index, out var formatValue) || !TryParseFormat(formatValue, out var format))
-                    {
-                        return CliCommandParseResult.Failure(CreateArgumentError("Invalid --format value."));
-                    }
-                    global = global with { Format = format };
-                    break;
-                case "--lang":
-                    if (!TryReadValue(args, ref index, out var lang))
-                    {
-                        return CliCommandParseResult.Failure(CreateArgumentError("Missing --lang value."));
-                    }
-                    global = global with { Language = lang };
-                    break;
-                case "--target-version":
-                    if (!TryReadValue(args, ref index, out var targetVersion))
-                    {
-                        return CliCommandParseResult.Failure(CreateArgumentError("Missing --target-version value."));
-                    }
-                    global = global with { TargetVersion = targetVersion };
-                    break;
-                case "--product":
-                    if (!TryReadValue(args, ref index, out var product))
-                    {
-                        return CliCommandParseResult.Failure(CreateArgumentError("Missing --product value."));
-                    }
-                    global = global with { Product = product };
-                    break;
-                case "--data-root":
-                    if (!TryReadValue(args, ref index, out var dataRoot))
-                    {
-                        return CliCommandParseResult.Failure(CreateArgumentError("Missing --data-root value."));
-                    }
-                    global = global with { DataRoot = dataRoot };
-                    break;
-                case "--detail":
-                    global = global with { Detail = true };
-                    index++;
-                    break;
-                case "--no-update-check":
-                    global = global with { NoUpdateCheck = true };
-                    index++;
-                    break;
-                default:
-                    return CliCommandParseResult.Failure(CreateArgumentError($"Unknown global option '{token}'."));
+                return CliCommandParseResult.Failure(error);
+            }
+
+            if (!consumed)
+            {
+                return CliCommandParseResult.Failure(CreateArgumentError($"Unknown global option '{token}'."));
             }
         }
 
@@ -84,7 +51,41 @@ public sealed class CliCommandParser
             return CliCommandParseResult.Failure(CreateUnknownCommandError(null));
         }
 
-        var commandName = args[index];
+        var commandName = args[index] is "--help" or "-h" ? "help" : args[index];
+        var commandArguments = new List<string>();
+        var hasCommandHelpFlag = false;
+        var commandArgIndex = index + 1;
+        while (commandArgIndex < args.Count)
+        {
+            var token = args[commandArgIndex];
+            if (token is "--help" or "-h")
+            {
+                hasCommandHelpFlag = true;
+                commandArgIndex++;
+                continue;
+            }
+
+            if (TryConsumeGlobalOption(args, ref commandArgIndex, ref global, errorOnUnknown: false, out var error))
+            {
+                if (error is not null)
+                {
+                    return CliCommandParseResult.Failure(error);
+                }
+
+                continue;
+            }
+
+            commandArguments.Add(token);
+            commandArgIndex++;
+        }
+
+        if (hasCommandHelpFlag && !commandName.Equals("help", StringComparison.OrdinalIgnoreCase))
+        {
+            commandArguments.Clear();
+            commandArguments.Add(commandName);
+            commandName = "help";
+        }
+
         if (!catalog.TryFind(commandName, out var descriptor) || descriptor is null)
         {
             return CliCommandParseResult.Failure(CreateUnknownCommandError(commandName));
@@ -98,7 +99,87 @@ public sealed class CliCommandParser
         return CliCommandParseResult.Success(
             descriptor,
             global,
-            Array.AsReadOnly(args.Skip(index + 1).ToArray()));
+            Array.AsReadOnly(commandArguments.ToArray()));
+    }
+
+    private static bool TryConsumeGlobalOption(
+        IReadOnlyList<string> args,
+        ref int index,
+        ref GlobalCliOptions global,
+        bool errorOnUnknown,
+        out AtomUICliError? error)
+    {
+        error = null;
+        var token = args[index];
+        switch (token)
+        {
+            case "--format":
+                if (!TryReadValue(args, ref index, out var formatValue) || !TryParseFormat(formatValue, out var format))
+                {
+                    error = CreateArgumentError("Invalid --format value.");
+                }
+                else
+                {
+                    global = global with { Format = format };
+                }
+                return true;
+            case "--lang":
+                if (!TryReadValue(args, ref index, out var lang))
+                {
+                    error = CreateArgumentError("Missing --lang value.");
+                }
+                else
+                {
+                    global = global with { Language = lang };
+                }
+                return true;
+            case "--target-version":
+                if (!TryReadValue(args, ref index, out var targetVersion))
+                {
+                    error = CreateArgumentError("Missing --target-version value.");
+                }
+                else
+                {
+                    global = global with { TargetVersion = targetVersion };
+                }
+                return true;
+            case "--product":
+                if (!TryReadValue(args, ref index, out var product))
+                {
+                    error = CreateArgumentError("Missing --product value.");
+                }
+                else
+                {
+                    global = global with { Product = product };
+                }
+                return true;
+            case "--data-root":
+                if (!TryReadValue(args, ref index, out var dataRoot))
+                {
+                    error = CreateArgumentError("Missing --data-root value.");
+                }
+                else
+                {
+                    global = global with { DataRoot = dataRoot };
+                }
+                return true;
+            case "--detail":
+                global = global with { Detail = true };
+                index++;
+                return true;
+            case "--no-update-check":
+                global = global with { NoUpdateCheck = true };
+                index++;
+                return true;
+            default:
+                if (errorOnUnknown && token.StartsWith("--", StringComparison.Ordinal))
+                {
+                    error = CreateArgumentError($"Unknown global option '{token}'.");
+                    return true;
+                }
+
+                return false;
+        }
     }
 
     private static bool TryReadValue(IReadOnlyList<string> args, ref int index, out string value)

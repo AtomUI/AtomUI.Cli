@@ -23,9 +23,9 @@ public sealed partial class AtomUICliCoreModule : Modularity.AtomUICliModule
             CommandGroup.Integration,
             new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json });
 
-        context.Add<BuiltInCommandOptions, HelpCommandHandler>(
+        context.Add<HelpCommandOptions, HelpCommandHandler>(
             "help",
-            (global, _) => new BuiltInCommandOptions(global),
+            HelpCommandOptions.Parse,
             CommandGroup.Integration,
             new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
     }

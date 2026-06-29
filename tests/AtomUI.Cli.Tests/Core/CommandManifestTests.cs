@@ -32,4 +32,17 @@ public sealed class CommandManifestTests
 
         Assert.Contains("fake", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuiltInCatalogProvidesHelpMetadataForEveryCommand()
+    {
+        var catalog = CommandManifestCatalog.CreateBuiltIn();
+
+        foreach (var manifest in catalog.Manifests)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(manifest.Help.Summary), manifest.Name);
+            Assert.False(string.IsNullOrWhiteSpace(manifest.Help.Usage), manifest.Name);
+            Assert.NotEmpty(manifest.Help.Examples);
+        }
+    }
 }

@@ -77,4 +77,6 @@ git diff --check
 
 ## 许可
 
+Copyright (c) 2018-2026 Qinware Technologies Co., Ltd. All rights reserved.
+
 AtomUI.Cli 使用 GNU Lesser General Public License v3.0 only 许可，详见 [LICENSE](LICENSE)。

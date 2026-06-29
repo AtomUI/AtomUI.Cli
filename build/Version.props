@@ -9,5 +9,6 @@
     <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">$(AtomUICliAssemblyVersion)</AssemblyVersion>
     <FileVersion Condition="'$(FileVersion)' == ''">$(AtomUICliAssemblyVersion)</FileVersion>
     <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(AtomUICliVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

@@ -10,7 +10,7 @@ AtomUI Cli 命令运行时负责把 `dotnet atomui ...` 调用转换为强类型
 
 | 层级 | 作用 | 是否需要模块实例 |
 | --- | --- | --- |
-| `CommandManifestCatalog` | 启动早期识别命令、所属模块、额外 required modules、分组、格式、读写属性和项目要求。 | 否 |
+| `CommandManifestCatalog` | 启动早期识别命令、所属模块、额外 required modules、分组、格式、读写属性、项目要求和帮助摘要。 | 否 |
 | `CliCommandDescriptorCatalog` | active modules 生命周期完成后，提供 options factory、handler 类型和执行元数据。 | 是，仅 active modules |
 
 所有公开命令都必须先进入 manifest，再由所属模块贡献真实 descriptor。manifest 来自显式代码或 source generator，不能通过程序集扫描生成。
@@ -35,6 +35,17 @@ descriptor 必须包含：
 | `RequiresProject` | 是否需要项目路径。 |
 | `RequiresWriteConfirmation` | 是否需要 `--write`。 |
 
+manifest 必须额外包含 help 首页和详情页所需的轻量字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `Summary` | 一句话说明命令用途，首页和详情页都使用。 |
+| `Usage` | 可复制的调用语法，例如 `dotnet atomui info <control> [options]`。 |
+| `Arguments` | 位置参数摘要，不包含运行时业务查询。 |
+| `Options` | 命令私有选项摘要，全局选项由 Core 统一注入。 |
+| `Examples` | 2 到 4 条高价值示例。 |
+| `HelpPriority` | 首页常用命令和分组排序使用，避免纯字母排序。 |
+
 禁止通过程序集扫描、attribute scanning 或命名约定发现命令。
 
 ## 命令预解析
@@ -53,7 +64,8 @@ Raw args
 
 - `--version` 和 `-v` 映射到 `version`。
 - 空参数、`--help` 和 `-h` 映射到 `help`。
-- `help <command>` 不激活全部模块，先读取 manifest；需要详细帮助时只激活目标命令所属模块。
+- `help <command>` 不激活全部模块，优先读取 manifest 输出命令详情；只有后续引入命令私有 help provider 时才激活目标命令所属模块。
+- `<command> --help` 在预解析阶段转换为 `help <command>`，不能执行目标命令 handler。
 - `--format` 可以在预解析阶段校验目标命令是否支持该格式。
 - 未知命令从 manifest 返回参数错误和 suggestions，不进入模块生命周期。
 - 预解析不绑定命令私有选项，不读取文件系统，不访问数据根。
@@ -78,6 +90,34 @@ active modules = Core + command owner module + command required modules + hard d
 | `mcp` | Core、MCP |
 
 只有 active modules 可以执行 `ConfigureServices`、贡献真实 command descriptor、进入 `Initialize` 和 `Shutdown`。未激活模块不能创建实例，不能注册服务，不能执行生命周期钩子。
+
+## Help 输出契约
+
+`help` 是命令运行时的一部分，不是业务模块命令。它必须提供首页和详情页两层输出。
+
+首页 `dotnet atomui help` 必须包含：
+
+- `AtomUI Cli` 标题。
+- CLI 展示版本，取包版本，不包含 Git 修订号后缀。
+- 版权信息，统一使用 `Qinware Technologies Co., Ltd.`。
+- `Usage`。
+- `Common commands`，优先展示 `list`、`info`、`doc`、`demo`、`doctor`、`setup`。
+- `Command groups`，按 Knowledge、Project analysis、Setup、Integration 分组。
+- `Global options`。
+- `More`，提示 `dotnet atomui help <command>` 和 `dotnet atomui <command> --help`。
+
+详情页 `dotnet atomui help <command>` 必须包含：
+
+- 命令 summary。
+- Usage。
+- Arguments。
+- Options。
+- Examples。
+- supported formats。
+- 是否需要项目上下文。
+- 是否需要写入确认。
+
+help 禁止输出只有命令名的裸列表。每个命令至少必须显示 summary。`--format json` 时必须输出结构化 payload，而不是把 text help 包成字符串；首页 payload 必须包含 `version` 和 `copyright` 字段。
 
 ## 全局选项绑定
 

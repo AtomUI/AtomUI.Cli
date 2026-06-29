@@ -210,7 +210,7 @@ Raw args
   -> ModuleActivationPlan
 ```
 
-`CommandManifestCatalog` 是轻量事实来源，包含命令名、所属模块、命令级 required modules、分组、支持格式、读写属性和项目要求。它必须来自显式代码或 source generator，不能通过运行时扫描模块得到。
+`CommandManifestCatalog` 是轻量事实来源，包含命令名、所属模块、命令级 required modules、分组、支持格式、读写属性、项目要求和帮助元数据。它必须来自显式代码或 source generator，不能通过运行时扫描模块得到。
 
 激活规则固定为：
 
@@ -229,7 +229,9 @@ active modules = Core + command owner module + command required modules + hard d
 | `add datagrid` | Core、Setup、Metadata |
 | `mcp` | Core、MCP |
 
-`help` 不应为了列出所有命令激活全部模块；默认帮助从 manifest 输出。`help <command>` 需要详细命令帮助时，只激活目标命令所属模块、命令级 required modules 和硬依赖模块。
+`help` 不应为了列出所有命令激活全部模块；默认帮助和命令详情优先从 manifest 输出。只有后续引入命令私有 help provider 时，`help <command>` 才激活目标命令所属模块、命令级 required modules 和硬依赖模块。
+
+help 输出必须面向首次使用者组织内容：首页包含 Usage、Common commands、Command groups、Global options 和 More；详情页包含 summary、usage、arguments、options、examples、supported formats、requires project 和 write confirmation。禁止输出只有命令名的裸列表。
 
 MCP 是特殊模式：`mcp` 进程启动时只激活 Core 和 MCP。`tools/list` 读取 tool manifest；`tools/call` 再根据 tool 所属模块创建 invocation activation plan，按需激活 Metadata、Project Analysis、Setup 或商业数据能力。
 

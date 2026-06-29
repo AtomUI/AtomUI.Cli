@@ -8,6 +8,7 @@
 
 | 分组 | 命令 | 架构文档 | 详细设计 | 所属模块 | 阶段 | 默认写入 |
 | --- | --- | --- | --- | --- | --- | --- |
+| 核心入口 | `help` | [overview](help/overview.md) | [design](help/design.md) | `AtomUICliCoreModule` | P0 | 否 |
 | 知识查询 | `list` | [overview](list/overview.md) | [design](list/design.md) | `AtomUICliMetadataModule` | P0 | 否 |
 | 知识查询 | `info` | [overview](info/overview.md) | [design](info/design.md) | `AtomUICliMetadataModule` | P0 | 否 |
 | 知识查询 | `doc` | [overview](doc/overview.md) | [design](doc/design.md) | `AtomUICliMetadataModule` | P0 | 否 |
@@ -55,6 +56,7 @@ context.Commands.Add<ListCommandOptions, ListCommandHandler>("list");
 命令实现规则：
 
 - 每个命令提供 `*CommandOptions` 和 `*CommandHandler`。
+- `help`、`version` 属于 Core 内置命令；其中 `help` 必须有独立命令设计文档，因为它定义 CLI 的入口引导体验。
 - Handler 实现 `IAtomUICliCommandHandler<TOptions>`。
 - Handler 生命周期为 `Transient`，在每次命令执行的 DI scope 中创建。
 - 命令不得接收根 `IServiceProvider`。

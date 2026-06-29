@@ -10,7 +10,6 @@ public sealed class VersionCommandHandler : IAtomUICliCommandHandler<BuiltInComm
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var version = typeof(VersionCommandHandler).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-        return ValueTask.FromResult(AtomUICliResult.Success(version));
+        return ValueTask.FromResult(AtomUICliResult.Success(CliProductInfo.Current.Version));
     }
 }

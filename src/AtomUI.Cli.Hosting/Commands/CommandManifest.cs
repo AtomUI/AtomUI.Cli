@@ -13,10 +13,60 @@ public sealed record CommandManifest(
     bool IsReadOnly = true,
     bool RequiresProject = false,
     bool RequiresWriteConfirmation = false,
-    IReadOnlyList<Type>? RequiredModuleTypes = null)
+    IReadOnlyList<Type>? RequiredModuleTypes = null,
+    CommandHelp? HelpMetadata = null)
 {
     public IReadOnlyList<Type> RequiredModules { get; } = Array.AsReadOnly((RequiredModuleTypes ?? []).ToArray());
+
+    public CommandHelp Help { get; } = HelpMetadata ?? CommandHelp.CreateDefault(Name);
 }
+
+public sealed class CommandHelp
+{
+    public CommandHelp(
+        string summary,
+        string usage,
+        IEnumerable<CommandArgumentHelp>? arguments = null,
+        IEnumerable<CommandOptionHelp>? options = null,
+        IEnumerable<string>? examples = null,
+        int priority = 100)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(summary);
+        ArgumentException.ThrowIfNullOrWhiteSpace(usage);
+
+        Summary = summary;
+        Usage = usage;
+        Arguments = Array.AsReadOnly((arguments ?? []).ToArray());
+        Options = Array.AsReadOnly((options ?? []).ToArray());
+        Examples = Array.AsReadOnly((examples ?? []).ToArray());
+        Priority = priority;
+    }
+
+    public string Summary { get; }
+
+    public string Usage { get; }
+
+    public IReadOnlyList<CommandArgumentHelp> Arguments { get; }
+
+    public IReadOnlyList<CommandOptionHelp> Options { get; }
+
+    public IReadOnlyList<string> Examples { get; }
+
+    public int Priority { get; }
+
+    public static CommandHelp CreateDefault(string commandName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return new CommandHelp(
+            $"{commandName} command.",
+            $"dotnet atomui {commandName} [options]",
+            examples: [$"dotnet atomui {commandName}"]);
+    }
+}
+
+public sealed record CommandArgumentHelp(string Name, string Description, bool IsRequired = true);
+
+public sealed record CommandOptionHelp(string Name, string Description, string? ValueName = null);
 
 public sealed class CommandManifestCatalog
 {
@@ -60,27 +110,256 @@ public sealed class CommandManifestCatalog
     {
         return Create(
         [
-            Integration("version", typeof(AtomUICliCoreModule), TextJson),
-            Integration("help", typeof(AtomUICliCoreModule), TextJsonMarkdown),
-            Knowledge("list"),
-            Knowledge("info"),
-            Knowledge("doc"),
-            Knowledge("demo"),
-            Knowledge("token"),
-            Knowledge("semantic"),
-            Knowledge("design.md"),
-            Knowledge("package"),
-            Knowledge("changelog"),
-            Analysis("env"),
-            Analysis("doctor"),
-            Analysis("usage"),
-            Analysis("lint"),
-            Analysis("migrate"),
-            Integration("mcp", typeof(AtomUICliMcpModule), TextJson),
-            Write("setup", requiredModuleTypes: []),
-            Write("init", requiresProject: true, requiredModuleTypes: []),
-            Write("add", requiresProject: true, requiredModuleTypes: [typeof(AtomUICliMetadataModule)]),
-            Write("upgrade", requiredModuleTypes: [typeof(AtomUICliMetadataModule)])
+            Integration(
+                "version",
+                typeof(AtomUICliCoreModule),
+                TextJson,
+                Help("Print the AtomUI Cli version.", "dotnet atomui version", ["dotnet atomui --version", "dotnet atomui version"], 900)),
+            Integration(
+                "help",
+                typeof(AtomUICliCoreModule),
+                TextJsonMarkdown,
+                Help(
+                    "Show help for AtomUI Cli or a specific command.",
+                    "dotnet atomui help [command]",
+                    ["dotnet atomui help", "dotnet atomui help info"],
+                    0,
+                    arguments: [new CommandArgumentHelp("command", "Optional command name.", IsRequired: false)])),
+            Knowledge(
+                "list",
+                "List available AtomUI controls, packages, products, or categories.",
+                "dotnet atomui list [controls|packages|products|categories] [options]",
+                ["dotnet atomui list", "dotnet atomui list packages --format json"],
+                10),
+            Knowledge(
+                "info",
+                "Show metadata for an AtomUI control.",
+                "dotnet atomui info <control> [options]",
+                ["dotnet atomui info Button", "dotnet atomui info DataGrid --format json"],
+                20,
+                arguments: [new CommandArgumentHelp("control", "Control name, for example Button or DataGrid.")],
+                options:
+                [
+                    new CommandOptionHelp("--include", "Include metadata sections.", "section"),
+                    new CommandOptionHelp("--strict", "Disable fuzzy matching.")
+                ]),
+            Knowledge(
+                "doc",
+                "Generate usage documentation for a control.",
+                "dotnet atomui doc <control> [options]",
+                ["dotnet atomui doc Button", "dotnet atomui doc DataGrid --format markdown"],
+                30,
+                arguments: [new CommandArgumentHelp("control", "Control name.")],
+                options:
+                [
+                    new CommandOptionHelp("--topic", "Limit documentation to a topic.", "topic"),
+                    new CommandOptionHelp("--section", "Limit output to a documentation section.", "section")
+                ]),
+            Knowledge(
+                "demo",
+                "Show demos for a control.",
+                "dotnet atomui demo <control> [demo] [options]",
+                ["dotnet atomui demo Button", "dotnet atomui demo DataGrid --code-only"],
+                40,
+                arguments:
+                [
+                    new CommandArgumentHelp("control", "Control name."),
+                    new CommandArgumentHelp("demo", "Optional demo name.", IsRequired: false)
+                ],
+                options:
+                [
+                    new CommandOptionHelp("--list", "List demos only."),
+                    new CommandOptionHelp("--code-only", "Show demo code only.")
+                ]),
+            Knowledge(
+                "token",
+                "Show design tokens for AtomUI or a control.",
+                "dotnet atomui token [control] [options]",
+                ["dotnet atomui token", "dotnet atomui token Button --scope control"],
+                100,
+                arguments: [new CommandArgumentHelp("control", "Optional control name.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--scope", "Token scope.", "global|control"),
+                    new CommandOptionHelp("--name", "Exact token name.", "name")
+                ]),
+            Knowledge(
+                "semantic",
+                "Show semantic DOM information for a control.",
+                "dotnet atomui semantic <control> [options]",
+                ["dotnet atomui semantic Button", "dotnet atomui semantic DataGrid --include-template"],
+                110,
+                arguments: [new CommandArgumentHelp("control", "Control name.")],
+                options:
+                [
+                    new CommandOptionHelp("--part", "Semantic part name.", "part"),
+                    new CommandOptionHelp("--include-template", "Include template information.")
+                ]),
+            Knowledge(
+                "design.md",
+                "Generate design guidance for AtomUI implementation.",
+                "dotnet atomui design.md [options]",
+                ["dotnet atomui design.md", "dotnet atomui design.md --section accessibility"],
+                120,
+                options:
+                [
+                    new CommandOptionHelp("--section", "Design guidance section.", "section"),
+                    new CommandOptionHelp("--audience", "Target audience.", "developer|agent")
+                ]),
+            Knowledge(
+                "package",
+                "Show package or product information.",
+                "dotnet atomui package [package-or-product] [options]",
+                ["dotnet atomui package", "dotnet atomui package AtomUI.Controls"],
+                130,
+                arguments: [new CommandArgumentHelp("package-or-product", "Optional package or product id.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--strict", "Disable fuzzy matching."),
+                    new CommandOptionHelp("--include-compatibility", "Include compatibility information.")
+                ]),
+            Knowledge(
+                "changelog",
+                "Show AtomUI release notes and control changes.",
+                "dotnet atomui changelog [range] [options]",
+                ["dotnet atomui changelog", "dotnet atomui changelog 1.0.0..1.1.0 --control Button"],
+                140,
+                arguments: [new CommandArgumentHelp("range", "Optional version range.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--control", "Filter by control.", "control"),
+                    new CommandOptionHelp("--package", "Filter by package.", "package")
+                ]),
+            Analysis(
+                "env",
+                "Print AtomUI project environment information.",
+                "dotnet atomui env [path]",
+                ["dotnet atomui env", "dotnet atomui env ./src/App"],
+                200,
+                arguments: [new CommandArgumentHelp("path", "Project or solution path.", IsRequired: false)]),
+            Analysis(
+                "doctor",
+                "Diagnose an AtomUI project.",
+                "dotnet atomui doctor [path] [options]",
+                ["dotnet atomui doctor", "dotnet atomui doctor ./src/App --format json"],
+                50,
+                arguments: [new CommandArgumentHelp("path", "Project or solution path.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--rule", "Limit diagnosis to one rule.", "rule"),
+                    new CommandOptionHelp("--fail-on-warning", "Return diagnostic failure for warnings.")
+                ]),
+            Analysis(
+                "usage",
+                "Analyze AtomUI control usage in a project.",
+                "dotnet atomui usage [path] [options]",
+                ["dotnet atomui usage", "dotnet atomui usage ./src/App --control Button"],
+                210,
+                arguments: [new CommandArgumentHelp("path", "Project or solution path.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--control", "Filter by control.", "control"),
+                    new CommandOptionHelp("--group-by", "Group usage results.", "control|file|package")
+                ]),
+            Analysis(
+                "lint",
+                "Check AtomUI project conventions.",
+                "dotnet atomui lint [path] [options]",
+                ["dotnet atomui lint", "dotnet atomui lint ./src/App --fail-on-warning"],
+                220,
+                arguments: [new CommandArgumentHelp("path", "Project or solution path.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--rule", "Limit lint to one rule.", "rule"),
+                    new CommandOptionHelp("--fail-on-warning", "Return diagnostic failure for warnings.")
+                ]),
+            Analysis(
+                "migrate",
+                "Generate migration guidance for an AtomUI project.",
+                "dotnet atomui migrate [path] [options]",
+                ["dotnet atomui migrate", "dotnet atomui migrate ./src/App --to 2.0.0"],
+                230,
+                arguments: [new CommandArgumentHelp("path", "Project or solution path.", IsRequired: false)],
+                options:
+                [
+                    new CommandOptionHelp("--from", "Source AtomUI version.", "version"),
+                    new CommandOptionHelp("--to", "Target AtomUI version.", "version")
+                ]),
+            Integration(
+                "mcp",
+                typeof(AtomUICliMcpModule),
+                TextJson,
+                Help(
+                    "Start the AtomUI MCP server.",
+                    "dotnet atomui mcp [options]",
+                    ["dotnet atomui mcp", "dotnet atomui mcp --target-version 1.0.0"],
+                    300,
+                    options:
+                    [
+                        new CommandOptionHelp("--transport", "MCP transport.", "stdio"),
+                        new CommandOptionHelp("--tool-prefix", "Tool name prefix.", "name")
+                    ])),
+            Write(
+                "setup",
+                Help(
+                    "Configure local AtomUI Cli integration.",
+                    "dotnet atomui setup [options]",
+                    ["dotnet atomui setup", "dotnet atomui setup --target codex --write"],
+                    60,
+                    options:
+                    [
+                        new CommandOptionHelp("--target", "Integration target.", "codex|cursor|vscode|all"),
+                        new CommandOptionHelp("--write", "Apply the generated write plan.")
+                    ]),
+                requiredModuleTypes: []),
+            Write(
+                "init",
+                Help(
+                    "Initialize AtomUI project configuration.",
+                    "dotnet atomui init [path] [options]",
+                    ["dotnet atomui init", "dotnet atomui init ./src/App --write"],
+                    400,
+                    arguments: [new CommandArgumentHelp("path", "Project path.", IsRequired: false)],
+                    options:
+                    [
+                        new CommandOptionHelp("--write", "Apply the generated write plan."),
+                        new CommandOptionHelp("--force", "Overwrite conflicting configuration.")
+                    ]),
+                requiresProject: true,
+                requiredModuleTypes: []),
+            Write(
+                "add",
+                Help(
+                    "Add an AtomUI package or product to a project.",
+                    "dotnet atomui add <package-or-product> [path] [options]",
+                    ["dotnet atomui add datagrid", "dotnet atomui add AtomUI.Controls ./src/App --write"],
+                    410,
+                    arguments:
+                    [
+                        new CommandArgumentHelp("package-or-product", "Package or product id."),
+                        new CommandArgumentHelp("path", "Project path.", IsRequired: false)
+                    ],
+                    options:
+                    [
+                        new CommandOptionHelp("--project", "Project file path.", "path"),
+                        new CommandOptionHelp("--write", "Apply the generated write plan.")
+                    ]),
+                requiresProject: true,
+                requiredModuleTypes: [typeof(AtomUICliMetadataModule)]),
+            Write(
+                "upgrade",
+                Help(
+                    "Upgrade AtomUI Cli or project packages.",
+                    "dotnet atomui upgrade [path] [options]",
+                    ["dotnet atomui upgrade", "dotnet atomui upgrade ./src/App --to 2.0.0 --write"],
+                    420,
+                    arguments: [new CommandArgumentHelp("path", "Project path.", IsRequired: false)],
+                    options:
+                    [
+                        new CommandOptionHelp("--to", "Target version.", "version"),
+                        new CommandOptionHelp("--write", "Apply the generated write plan.")
+                    ]),
+                requiredModuleTypes: [typeof(AtomUICliMetadataModule)])
         ]);
     }
 
@@ -96,16 +375,31 @@ public sealed class CommandManifestCatalog
     private static readonly IReadOnlySet<OutputFormat> TextJsonMarkdown =
         new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown };
 
-    private static CommandManifest Knowledge(string name)
+    private static CommandManifest Knowledge(
+        string name,
+        string summary,
+        string usage,
+        IReadOnlyList<string> examples,
+        int priority,
+        IReadOnlyList<CommandArgumentHelp>? arguments = null,
+        IReadOnlyList<CommandOptionHelp>? options = null)
     {
         return new CommandManifest(
             name,
             typeof(AtomUICliMetadataModule),
             CommandGroup.Knowledge,
-            TextJsonMarkdown);
+            TextJsonMarkdown,
+            HelpMetadata: Help(summary, usage, examples, priority, arguments, options));
     }
 
-    private static CommandManifest Analysis(string name)
+    private static CommandManifest Analysis(
+        string name,
+        string summary,
+        string usage,
+        IReadOnlyList<string> examples,
+        int priority,
+        IReadOnlyList<CommandArgumentHelp>? arguments = null,
+        IReadOnlyList<CommandOptionHelp>? options = null)
     {
         return new CommandManifest(
             name,
@@ -113,19 +407,29 @@ public sealed class CommandManifestCatalog
             CommandGroup.Analysis,
             TextJsonMarkdown,
             RequiresProject: true,
-            RequiredModuleTypes: [typeof(AtomUICliMetadataModule)]);
+            RequiredModuleTypes: [typeof(AtomUICliMetadataModule)],
+            HelpMetadata: Help(summary, usage, examples, priority, arguments, options));
     }
 
-    private static CommandManifest Integration(string name, Type ownerModuleType, IReadOnlySet<OutputFormat> supportedFormats)
+    private static CommandManifest Integration(
+        string name,
+        Type ownerModuleType,
+        IReadOnlySet<OutputFormat> supportedFormats,
+        CommandHelp help)
     {
         return new CommandManifest(
             name,
             ownerModuleType,
             CommandGroup.Integration,
-            supportedFormats);
+            supportedFormats,
+            HelpMetadata: help);
     }
 
-    private static CommandManifest Write(string name, bool requiresProject = false, IReadOnlyList<Type>? requiredModuleTypes = null)
+    private static CommandManifest Write(
+        string name,
+        CommandHelp help,
+        bool requiresProject = false,
+        IReadOnlyList<Type>? requiredModuleTypes = null)
     {
         return new CommandManifest(
             name,
@@ -135,6 +439,18 @@ public sealed class CommandManifestCatalog
             IsReadOnly: false,
             RequiresProject: requiresProject,
             RequiresWriteConfirmation: true,
-            RequiredModuleTypes: requiredModuleTypes);
+            RequiredModuleTypes: requiredModuleTypes,
+            HelpMetadata: help);
+    }
+
+    private static CommandHelp Help(
+        string summary,
+        string usage,
+        IReadOnlyList<string> examples,
+        int priority,
+        IReadOnlyList<CommandArgumentHelp>? arguments = null,
+        IReadOnlyList<CommandOptionHelp>? options = null)
+    {
+        return new CommandHelp(summary, usage, arguments, options, examples, priority);
     }
 }

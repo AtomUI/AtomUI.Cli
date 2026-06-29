@@ -69,6 +69,25 @@ public sealed class AtomUICliApplicationTests
         Assert.Equal(0, recorder.Shutdown);
     }
 
+    [Fact]
+    public async Task RunAsyncCommandHelpShortcutDoesNotActivateTargetModule()
+    {
+        var recorder = new ApplicationRecorder();
+        var application = AtomUICliApplication
+            .CreateBuilder(["fake", "--help"])
+            .AddModuleRegistration(CreateRecordingFactoryRegistration(recorder), typeof(RecordingModule))
+            .AddCommandManifest(CreateFakeManifest())
+            .Build();
+
+        var exitCode = await application.RunAsync(["fake", "--help"], TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, exitCode);
+        Assert.Null(recorder.HandledValue);
+        Assert.Equal(0, recorder.RecordingCreated);
+        Assert.Equal(0, recorder.Initialized);
+        Assert.Equal(0, recorder.Shutdown);
+    }
+
     private static ModuleRegistration CreateRegistration(RecordingModule module)
     {
         return ModuleRegistration.For(

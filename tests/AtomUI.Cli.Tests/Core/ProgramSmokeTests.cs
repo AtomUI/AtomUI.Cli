@@ -47,18 +47,69 @@ public sealed class ProgramSmokeTests
         var stdout = await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var stderr = await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, process.ExitCode);
-        Assert.False(string.IsNullOrWhiteSpace(stdout), stderr);
+        Assert.Equal($"1.0.0-alpha.1{Environment.NewLine}", stdout);
+        Assert.True(string.IsNullOrWhiteSpace(stderr));
     }
 
     [Fact]
-    public async Task PublishedDllEntrypointHelpListsManifestCommands()
+    public async Task PublishedDllEntrypointHelpShowsUsefulSections()
     {
         var result = await RunCliProcessAsync(["help"], TestContext.Current.CancellationToken);
 
         Assert.True(result.Exited);
         Assert.Equal(0, result.ExitCode);
+        Assert.Contains("AtomUI Cli", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Version:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Copyright (c) 2018-2026 Qinware Technologies Co., Ltd. All rights reserved.", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Usage:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Common commands:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Command groups:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Global options:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("More:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("info <control>", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Show metadata", result.Stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PublishedDllEntrypointHelpCommandShowsCommandDetails()
+    {
+        var result = await RunCliProcessAsync(["help", "info"], TestContext.Current.CancellationToken);
+
+        Assert.True(result.Exited);
+        Assert.Equal(0, result.ExitCode);
         Assert.Contains("info", result.Stdout, StringComparison.Ordinal);
-        Assert.Contains("setup", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Show metadata", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Usage:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("dotnet atomui info <control> [options]", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Arguments:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Options:", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Examples:", result.Stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PublishedDllEntrypointCommandHelpShortcutShowsCommandDetails()
+    {
+        var result = await RunCliProcessAsync(["info", "--help"], TestContext.Current.CancellationToken);
+
+        Assert.True(result.Exited);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("dotnet atomui info <control> [options]", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Examples:", result.Stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PublishedDllEntrypointHelpJsonReturnsStructuredPayload()
+    {
+        var result = await RunCliProcessAsync(["help", "--format", "json"], TestContext.Current.CancellationToken);
+
+        Assert.True(result.Exited);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("\"payload\":{", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("\"version\":\"1.0.0-alpha.1\"", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("\"copyright\":\"Copyright (c) 2018-2026 Qinware Technologies Co., Ltd. All rights reserved.\"", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("\"commonCommands\"", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("\"groups\"", result.Stdout, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"payload\":\"", result.Stdout, StringComparison.Ordinal);
     }
 
     private static async Task<bool> WaitForExitAsync(Process process, TimeSpan timeout, CancellationToken cancellationToken)

@@ -63,7 +63,7 @@ Raw args
 
 | 对象 | 职责 |
 | --- | --- |
-| `CommandManifest` | 命令轻量描述，包含名称、所属模块、额外 required modules、分组、支持格式、读写属性和项目要求。 |
+| `CommandManifest` | 命令轻量描述，包含名称、所属模块、额外 required modules、分组、支持格式、读写属性、项目要求和帮助元数据。 |
 | `CommandManifestCatalog` | 所有命令的轻量索引，来自显式代码或 source generator，不依赖模块实例。 |
 | `CommandPreParser` | 解析 `--version`、`--help`、`--format` 和命令名。 |
 | `ModuleActivationPlanner` | 根据命令所属模块、命令级 required modules 和硬模块依赖计算本次运行的 active modules。 |
@@ -73,7 +73,8 @@ Raw args
 
 - Core 模块始终激活。
 - 普通命令激活所属模块、命令声明的 required modules，以及这些模块的硬依赖闭包。
-- `help` 默认只读取 manifest；`help <command>` 可以激活目标命令所属模块以输出详细帮助。
+- `help` 默认只读取 manifest；`help <command>` 优先读取 manifest 输出详细帮助，只有需要命令私有 help provider 时才激活目标命令所属模块。
+- `<command> --help` 必须在目标命令 handler 执行前转换为 `help <command>`。
 - `mcp` 启动时只激活 Core 和 MCP，tool invocation 再按 tool 所属模块懒激活。
 - 未知命令从 manifest 生成错误和建议，不触发全部模块加载。
 
@@ -167,6 +168,25 @@ CommandPreParser.ParseCommandName
 - `--format json` 失败时 stdout 保持为空，stderr 输出 JSON error envelope。
 - text 输出面向人类，字段可以少于 JSON，但顺序必须稳定。
 - markdown 只允许命令 descriptor 声明支持。
+
+## 8.1 Help 输出设计
+
+Core 模块负责 help 首页和 help 详情页。help 首页不能输出裸命令名列表，必须按照用户任务组织内容：
+
+```text
+AtomUI Cli
+  -> Usage
+  -> Common commands
+  -> Command groups
+  -> Global options
+  -> More
+```
+
+help 详情页必须输出命令 summary、usage、arguments、options、examples、supported formats、requires project 和 write confirmation。详情数据首期来自 `CommandManifestCatalog`，保证 `help` 不激活全部业务模块。
+
+help 首页必须从 CLI 产品元数据读取展示版本和版权信息，text、markdown 和 json 输出都必须包含这些字段。展示版本以包版本为准，不携带 Git 修订号后缀；版权主体统一为 `Qinware Technologies Co., Ltd.`。
+
+`CommandManifest` 因此必须包含 `Summary`、`Usage`、`Arguments`、`Options`、`Examples` 和 `HelpPriority`。这些字段必须显式声明或由 source generator 生成，不允许通过扫描 handler、attribute 或 XML doc 注释生成。
 
 ## 9. 错误与退出码
 

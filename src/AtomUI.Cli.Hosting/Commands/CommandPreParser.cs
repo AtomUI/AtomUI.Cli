@@ -53,15 +53,38 @@ public sealed class CommandPreParser
         while (index < args.Count)
         {
             var token = args[index];
+            if (token is "--help" or "-h")
+            {
+                return "help";
+            }
+
+            if (token is "--version" or "-v")
+            {
+                return "version";
+            }
+
             if (!token.StartsWith("--", StringComparison.Ordinal))
             {
-                return token;
+                return HasHelpFlag(args, index + 1) ? "help" : token;
             }
 
             index += IsBooleanGlobalOption(token) ? 1 : 2;
         }
 
         return null;
+    }
+
+    private static bool HasHelpFlag(IReadOnlyList<string> args, int startIndex)
+    {
+        for (var index = startIndex; index < args.Count; index++)
+        {
+            if (args[index] is "--help" or "-h")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryReadFormat(IReadOnlyList<string> args, out OutputFormat? format)

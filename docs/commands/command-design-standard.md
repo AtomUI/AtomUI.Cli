@@ -27,7 +27,7 @@
 
 | 字段 | 要求 |
 | --- | --- |
-| 所属模块 | 必须是 `AtomUICliMetadataModule`、`AtomUICliProjectAnalysisModule`、`AtomUICliMcpModule` 或 `AtomUICliSetupModule`。 |
+| 所属模块 | 必须是 `AtomUICliCoreModule`、`AtomUICliMetadataModule`、`AtomUICliProjectAnalysisModule`、`AtomUICliMcpModule` 或 `AtomUICliSetupModule`。 |
 | 注册阶段 | 必须通过 `ConfigureAtomUICliCommands` 贡献到 command catalog。 |
 | 命令分组 | 必须是 knowledge、project-analysis、integration 或 write。 |
 | 读写属性 | 必须明确 `isReadOnly`、`requiresProject`、`requiresWriteConfirmation`。 |
@@ -35,6 +35,8 @@
 | 输出格式 | 必须声明支持 `text`、`json`、`markdown` 的哪几种。 |
 
 命令不得通过程序集扫描、命名约定或 DI 枚举发现。
+
+Core 内置命令也必须遵守本标准。`help` 还必须声明首页、详情页、命令建议和 manifest 帮助元数据；`version` 可以只保留轻量设计，除非后续扩展版本诊断能力。
 
 ## 参数与选项
 

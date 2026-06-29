@@ -49,13 +49,43 @@ public sealed class CommandParserTests
         Assert.Equal(AtomUICliErrorCodes.ArgumentInvalidValue, result.Error?.Code);
     }
 
-    private static CliCommandDescriptor CreateDescriptor(string name)
+    [Fact]
+    public void ParseMapsCommandHelpShortcutToHelpDescriptor()
+    {
+        var helpDescriptor = CreateDescriptor("help", OutputFormat.Markdown);
+        var infoDescriptor = CreateDescriptor("info");
+        var catalog = CliCommandDescriptorCatalog.Create([helpDescriptor, infoDescriptor]);
+        var parser = new CliCommandParser();
+
+        var result = parser.Parse(["info", "--help"], catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(helpDescriptor, result.Descriptor);
+        Assert.Equal(["info"], result.CommandArguments);
+    }
+
+    [Fact]
+    public void ParseBindsGlobalFormatAfterHelpCommandArgument()
+    {
+        var helpDescriptor = CreateDescriptor("help", OutputFormat.Markdown);
+        var catalog = CliCommandDescriptorCatalog.Create([helpDescriptor]);
+        var parser = new CliCommandParser();
+
+        var result = parser.Parse(["help", "info", "--format", "markdown"], catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(helpDescriptor, result.Descriptor);
+        Assert.Equal(OutputFormat.Markdown, result.GlobalOptions.Format);
+        Assert.Equal(["info"], result.CommandArguments);
+    }
+
+    private static CliCommandDescriptor CreateDescriptor(string name, params OutputFormat[] additionalFormats)
     {
         return CliCommandDescriptor.Create<NoopCommandOptions, NoopCommandHandler>(
             name,
             (global, _) => new NoopCommandOptions(global),
             CommandGroup.Knowledge,
-            new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json });
+            new HashSet<OutputFormat>([OutputFormat.Text, OutputFormat.Json, .. additionalFormats]));
     }
 
     private sealed record NoopCommandOptions(GlobalCliOptions Global) : IAtomUICliCommandOptions;
