@@ -47,7 +47,7 @@ public sealed class SetupPlanService
     public WritePlan CreateAddPlan(AddCommandOptions options, global::AtomUI.Cli.Hosting.Metadata.MetadataQueryService metadata)
     {
         var package = metadata.FindPackageOrProduct(options.PackageOrProduct ?? string.Empty);
-        var packageId = package?.Id ?? options.PackageOrProduct ?? "AtomUI.Controls";
+        var packageId = package?.Id ?? options.PackageOrProduct ?? "AtomUI.Desktop.Controls";
         var version = options.Version ?? package?.Version ?? metadata.Catalog.TargetVersion;
 
         return new WritePlan(

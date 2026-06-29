@@ -4,27 +4,55 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
 {
     public MetadataCatalog Catalog => catalog;
 
-    public IReadOnlyList<ControlDescriptor> ListControls(string? productId = null, string? category = null)
+    public IReadOnlyList<ControlDescriptor> ListControls(
+        string? productId = null,
+        string? category = null,
+        string? packageId = null,
+        bool includeHidden = false)
     {
+        var normalizedCategory = NormalizeFilter(category);
         return catalog.Controls
             .Where(control => Matches(control.ProductId, productId)
-                              && (string.IsNullOrWhiteSpace(category) || control.Category.Equals(category, StringComparison.OrdinalIgnoreCase)))
-            .OrderBy(control => control.ProductId, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(control => control.Name, StringComparer.OrdinalIgnoreCase)
+                              && Matches(control.PackageId, packageId)
+                              && (includeHidden || !control.IsHidden)
+                              && (string.IsNullOrWhiteSpace(normalizedCategory) || MatchesCategory(control, normalizedCategory)))
+            .OrderBy(control => GetCategoryOrder(control.CategoryId))
+            .ThenBy(control => control.DisplayOrder)
+            .ToArray();
+    }
+
+    public IReadOnlyList<ControlCategoryDescriptor> ListCategories(string? productId = null, bool includeHidden = false)
+    {
+        var categoryIds = ListControls(productId, includeHidden: includeHidden)
+            .Select(control => control.CategoryId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return catalog.Categories
+            .Where(category => categoryIds.Contains(category.Id))
+            .OrderBy(category => category.DisplayOrder)
             .ToArray();
     }
 
     public IReadOnlyList<ProductDescriptor> ListProducts()
     {
-        return catalog.Products.OrderBy(product => product.Id, StringComparer.OrdinalIgnoreCase).ToArray();
+        return catalog.Products.ToArray();
     }
 
     public IReadOnlyList<PackageDescriptor> ListPackages(string? productId = null)
     {
         return catalog.Packages
             .Where(package => Matches(package.ProductId, productId))
-            .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    public ProductDescriptor? FindProduct(string productId)
+    {
+        return catalog.Products.FirstOrDefault(product => product.Id.Equals(productId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public PackageDescriptor? FindPackage(string packageId)
+    {
+        return catalog.Packages.FirstOrDefault(package => package.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
     }
 
     public ControlDescriptor? FindControl(string name, string? productId = null)
@@ -93,6 +121,70 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
     public string RenderSummary()
     {
         return $"AtomUI metadata {catalog.TargetVersion}: {catalog.Controls.Count} controls, {catalog.Packages.Count} packages.";
+    }
+
+    public ListCommandPayload CreateListPayload(ListCommandOptions options)
+    {
+        var controls = options.Kind is ListKind.Products or ListKind.Packages
+            ? Array.Empty<ControlDescriptor>()
+            : ListControls(options.Global.Product, options.Category, options.PackageId, options.IncludeHidden);
+        var products = options.Kind is ListKind.Controls or ListKind.Categories
+            ? Array.Empty<ProductDescriptor>()
+            : ListProducts().Where(product => Matches(product.Id, options.Global.Product)).ToArray();
+        var packages = options.Kind is ListKind.Controls or ListKind.Categories or ListKind.Products
+            ? Array.Empty<PackageDescriptor>()
+            : ListPackages(options.Global.Product);
+        var categories = CreateCategoryPayloads(controls);
+
+        return new ListCommandPayload(
+            "1.0",
+            catalog.TargetVersion,
+            options.Kind,
+            options.Global.Product,
+            options.Category,
+            options.PackageId,
+            categories,
+            products.Select(ListProductPayload.FromDescriptor).ToArray(),
+            packages.Select(ListPackagePayload.FromDescriptor).ToArray(),
+            []);
+    }
+
+    private IReadOnlyList<ListControlCategoryPayload> CreateCategoryPayloads(IReadOnlyList<ControlDescriptor> controls)
+    {
+        return catalog.Categories
+            .OrderBy(category => category.DisplayOrder)
+            .Select(category => new ListControlCategoryPayload(
+                category.Id,
+                category.Name,
+                category.DisplayOrder,
+                controls
+                    .Where(control => control.CategoryId.Equals(category.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(control => control.DisplayOrder)
+                    .Select(ListControlPayload.FromDescriptor)
+                    .ToArray()))
+            .Where(category => category.Controls.Count > 0)
+            .ToArray();
+    }
+
+    private int GetCategoryOrder(string categoryId)
+    {
+        return catalog.Categories.FirstOrDefault(category => category.Id.Equals(categoryId, StringComparison.OrdinalIgnoreCase))?.DisplayOrder ?? int.MaxValue;
+    }
+
+    private static bool MatchesCategory(ControlDescriptor control, string normalizedFilter)
+    {
+        return NormalizeFilter(control.CategoryId).Equals(normalizedFilter, StringComparison.Ordinal)
+               || NormalizeFilter(control.CategoryName).Equals(normalizedFilter, StringComparison.Ordinal);
+    }
+
+    internal static string NormalizeFilter(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant();
     }
 
     private static bool Matches(string value, string? filter)

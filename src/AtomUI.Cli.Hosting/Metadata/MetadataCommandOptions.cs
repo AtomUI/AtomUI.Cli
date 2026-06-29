@@ -15,6 +15,7 @@ public sealed record ListCommandOptions(
     GlobalCliOptions Global,
     ListKind Kind,
     string? Category,
+    string? PackageId,
     string? Since,
     bool IncludeHidden) : IAtomUICliCommandOptions
 {
@@ -23,7 +24,7 @@ public sealed record ListCommandOptions(
         var reader = new CommandOptionsReader(args);
         var kindText = reader.GetOption("kind") ?? reader.Positionals.FirstOrDefault() ?? "controls";
         var kind = Enum.TryParse<ListKind>(kindText, ignoreCase: true, out var parsed) ? parsed : ListKind.Controls;
-        return new ListCommandOptions(global, kind, reader.GetOption("category"), reader.GetOption("since"), reader.HasFlag("include-hidden"));
+        return new ListCommandOptions(global, kind, reader.GetOption("category"), reader.GetOption("package"), reader.GetOption("since"), reader.HasFlag("include-hidden"));
     }
 }
 

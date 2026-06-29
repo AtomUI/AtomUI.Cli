@@ -210,7 +210,7 @@ public sealed class CommandManifestCatalog
                 "package",
                 "Show package or product information.",
                 "dotnet atomui package [package-or-product] [options]",
-                ["dotnet atomui package", "dotnet atomui package AtomUI.Controls"],
+                ["dotnet atomui package", "dotnet atomui package AtomUI.Desktop.Controls"],
                 130,
                 arguments: [new CommandArgumentHelp("package-or-product", "Optional package or product id.", IsRequired: false)],
                 options:
@@ -332,7 +332,7 @@ public sealed class CommandManifestCatalog
                 Help(
                     "Add an AtomUI package or product to a project.",
                     "dotnet atomui add <package-or-product> [path] [options]",
-                    ["dotnet atomui add datagrid", "dotnet atomui add AtomUI.Controls ./src/App --write"],
+                    ["dotnet atomui add datagrid", "dotnet atomui add AtomUI.Desktop.Controls ./src/App --write"],
                     410,
                     arguments:
                     [
