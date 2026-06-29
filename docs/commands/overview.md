@@ -2,6 +2,8 @@
 
 `docs/commands/` 描述 AtomUI Cli 的公开命令面。每个子命令必须有独立目录，并通过所属模块的 CLI contribution catalog 显式注册；运行时不得通过程序集扫描或反射发现命令。
 
+所有命令详细设计必须遵守 [命令设计标准](command-design-standard.md)。命令文档必须写到可以直接指导研发实现 options、handler、领域服务调用、输出 DTO、错误分支和测试矩阵的粒度。
+
 ## 命令分组
 
 | 分组 | 命令 | 架构文档 | 详细设计 | 所属模块 | 阶段 | 默认写入 |

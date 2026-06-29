@@ -89,7 +89,7 @@ dry-run json 输出示例：
 | `ATOMUICLI_ARG002` | `2` | target 或 scope 非法。 |
 | `ATOMUICLI_SETUP001` | `6` | 配置文件读取失败。 |
 | `ATOMUICLI_SETUP002` | `6` | 存在冲突且未传入 `--force`。 |
-| `ATOMUICLI_SETUP003` | `6` | 写入失败。 |
+| `ATOMUICLI_SETUP004` | `6` | 写入失败。 |
 
 ## AOT 约束
 
@@ -105,3 +105,9 @@ dry-run json 输出示例：
 - 冲突配置无 `--force` 时阻止写入。
 - workspace scope 使用传入 workspace 路径。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [集成与写入命令共享设计](../integration-write-design.md)
+- [错误码标准](../error-code-standard.md)

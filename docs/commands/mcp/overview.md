@@ -84,6 +84,8 @@ dotnet atomui mcp --data-root ./metadata
 | `ATOMUICLI_MCP002` | `1` | tool 不存在。 |
 | `ATOMUICLI_MCP003` | `1` | tool invocation 失败。 |
 | `ATOMUICLI_DATA001` | `4` | metadata 不可用。 |
+| `ATOMUICLI_DATA004` | `4` | data-root 不可读或授权失败。 |
+| `ATOMUICLI_DATA005` | `4` | target version 无法解析。 |
 
 ## AOT 约束
 
@@ -99,4 +101,11 @@ dotnet atomui mcp --data-root ./metadata
 - tool 参数错误映射为 MCP error。
 - EOF 触发 server 正常停止。
 - 写入类命令不在默认 tool catalog 中。
+- data-root 或 target-version 错误在 server 启动前返回 CLI 错误。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [集成与写入命令共享设计](../integration-write-design.md)
+- [错误码标准](../error-code-standard.md)

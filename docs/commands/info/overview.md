@@ -106,3 +106,9 @@ text 输出优先展示安装、注册和常用 API。markdown 输出用于拼�
 - `--include tokens,semantic` 只输出请求部分。
 - 不存在控件返回建议和 `ATOMUICLI_CTRL001`。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

@@ -1,21 +1,6 @@
 <Project>
-  <PropertyGroup>
-    <AtomUICliTargetFramework>net10.0</AtomUICliTargetFramework>
-    <TargetFramework>$(AtomUICliTargetFramework)</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
-    <AnalysisLevel>latest</AnalysisLevel>
-    <WarningsAsErrors>Nullable</WarningsAsErrors>
-    <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <Description>AtomUI ecosystem command-line tool for metadata lookup, project diagnostics, setup automation, migration assistance, and MCP integrations.</Description>
-    <PackageTags>AtomUI;CLI;dotnet-tool;MCP</PackageTags>
-    <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-  </PropertyGroup>
-  <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
-    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" />
-  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)build/Version.props" />
+  <Import Project="$(MSBuildThisFileDirectory)build/Common.props" />
+  <Import Project="$(MSBuildThisFileDirectory)build/PackageMetaInfo.props" />
+  <Import Project="$(MSBuildThisFileDirectory)build/Output.props" />
 </Project>

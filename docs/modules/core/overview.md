@@ -60,3 +60,10 @@ public sealed partial class AtomUICliCoreModule : AtomUICliModule
 - stdout/stderr 分离。
 - text/json/markdown 输出稳定性。
 - 错误码 catalog 与退出码映射。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [模块设计索引](../overview.md)
+- [整体架构设计](../../architecture/atomui-cli-architecture-design.md)
+- [错误码标准](../../commands/error-code-standard.md)

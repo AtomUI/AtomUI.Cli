@@ -90,3 +90,10 @@ public sealed partial class AtomUICliProjectAnalysisModule : AtomUICliModule
 - 包冲突、注册缺失、XAML namespace、AOT 风险诊断。
 - generated files 跳过规则。
 - JSON 诊断输出稳定性。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [模块设计索引](../overview.md)
+- [整体架构设计](../../architecture/atomui-cli-architecture-design.md)
+- [项目分析命令共享设计](../../commands/project-analysis-design.md)

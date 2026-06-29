@@ -87,7 +87,7 @@ json 输出示例：
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | 输入路径格式非法。 |
-| `ATOMUICLI_PRJ001` | `3` | 未找到项目或解决方案。 |
+| `ATOMUICLI_PRJ001` | `4` | 未找到项目或解决方案。 |
 | `ATOMUICLI_PRJ002` | `4` | 项目文件无法读取或 XML 非法。 |
 
 ## AOT 约束
@@ -103,3 +103,10 @@ json 输出示例：
 - `--detail` 包含 publish/AOT 属性。
 - 输入路径不存在时返回 `ATOMUICLI_PRJ001`。
 - json 输出不包含机器相关临时路径，除非字段明确为项目路径。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [项目分析命令共享设计](../project-analysis-design.md)
+- [错误码标准](../error-code-standard.md)

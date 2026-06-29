@@ -1,91 +1,134 @@
 # dotnet atomui doc 详细设计
 
-## 目标
+## 1. 命令定位
 
-`doc` 聚合控件完整文档，面向人类阅读和 Agent 上下文注入。它不直接读取 markdown 源文件，而是从 metadata snapshot 的文档区块渲染。
+`doc` 输出控件或主题文档内容，适合开发者阅读和 Agent 获取完整说明。默认输出 markdown，也支持 JSON 包装文档内容。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui doc Button
+dotnet atomui doc Button --section api --format markdown
+dotnet atomui doc DataGrid --product datagrid --strict
+dotnet atomui doc --topic design-language --format json
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `target` | string | 控件名或 topic 二选一 | 缺失返回 `ATOMUICLI_ARG001` | 文档目标。 |
+| `--topic` | string | null | 与 target 互斥 | 查询非控件主题。 |
+| `--section` | enum | all | 非法返回 `ATOMUICLI_ARG002` | 输出文档 section。 |
+| `--strict` | bool | false | 无 | 控件名要求精确匹配。 |
+| `--product` | global string | all visible | 未知返回 `ATOMUICLI_PKG001` | 限定产品范围。 |
+| `--style` | enum | `full` | 非法返回 `ATOMUICLI_ARG002` | `full`、`summary`、`agent`。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record DocCommandOptions(
     GlobalCliOptions Global,
-    string Control,
-    DocSection Section,
-    bool Strict) : IAtomUICliCommandOptions;
+    string? Target,
+    string? Topic,
+    DocumentSection Section,
+    bool Strict,
+    DocumentStyle Style) : IAtomUICliCommandOptions;
+```
 
-public enum DocSection
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IDocumentationQueryService`
+- `IControlQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 校验 target/topic 二选一。
+2. 创建 metadata 上下文。
+3. 若是控件文档，先解析控件，处理 not found/ambiguous。
+4. 调用 `IDocumentationQueryService` 查询文档。
+5. 应用 section 和 style。
+6. 构建 `DocCommandPayload`。
+7. markdown 直接输出文档正文，json 输出结构化 payload。
+
+## 8. 领域服务契约
+
+```csharp
+public interface IDocumentationQueryService
 {
-    All,
-    Overview,
-    Usage,
-    Api,
-    Tokens,
-    Semantic,
-    Demos,
-    Changelog
+    ValueTask<DocumentQueryResult> QueryAsync(
+        DocumentQuery query,
+        CancellationToken cancellationToken);
 }
 ```
 
-## Payload
+结果分支：`Found`、`NotFound`、`AmbiguousTarget`、`SectionNotFound`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
 public sealed record DocCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    string Control,
-    IReadOnlyList<DocumentSectionDto> Sections);
-
-public sealed record DocumentSectionDto(
-    string Id,
+    string TargetKind,
+    string TargetId,
     string Title,
-    string Format,
-    string Content);
+    DocumentSection Section,
+    DocumentStyle Style,
+    string Markdown,
+    IReadOnlyList<string> RelatedDemos,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+## 10. 输出格式
 
-依赖：
+- text：输出 markdown 正文，但不加 JSON 包装。
+- markdown：与 text 相同，保留完整 heading。
+- json：输出 payload，`Markdown` 字段包含正文。
 
-- `IControlQueryService`
-- `IDocumentSectionBuilder`
-- `IDemoQueryService`
-- `ITokenQueryService`
-- `ISemanticPartQueryService`
-- `IChangelogQueryService`
-- `IOutputWriter`
+## 11. 错误与退出码
 
-执行步骤：
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_ARG001` | target/topic 缺失 | `2` |
+| `ATOMUICLI_ARG002` | section/style 非法或 target/topic 同时传入 | `2` |
+| `ATOMUICLI_CTRL001` | 控件不存在 | `3` |
+| `ATOMUICLI_CTRL002` | 控件歧义 | `3` |
+| `ATOMUICLI_PKG001` | product 不存在 | `3` |
+| `ATOMUICLI_DATA001` | 文档数据不可用 | `4` |
 
-1. 解析控件。
-2. 解析 section。
-3. 调用 `IDocumentSectionBuilder` 聚合 section。
-4. 移除空 section。
-5. 保持固定顺序：overview、usage、api、tokens、semantic、demos、changelog。
-6. 输出 markdown、json 或 text。
+## 12. AOT-first 约束
 
-## 输出规则
+section/style parser 静态实现。文档内容来自 snapshot，不从磁盘任意路径加载模板。JSON DTO 纳入 source generation。
 
-- 默认格式为 `markdown`。
-- `text` 输出和 markdown 内容一致，但去掉多余 heading 层级。
-- `json` 输出 section 数组，Agent 可自行裁剪。
+## 13. 测试矩阵
 
-## 错误
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| 控件文档 | `doc Button` | markdown 正文。 |
+| section | `doc Button --section api` | 只输出 API section。 |
+| topic | `doc --topic design-language` | 输出主题文档。 |
+| 非法互斥 | `doc Button --topic x` | `ATOMUICLI_ARG002`。 |
+| json | `--format json` | Markdown 字段存在。 |
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+## 14. 实现文件建议
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG001` | 缺少控件名。 |
-| `ATOMUICLI_ARG002` | section 非法。 |
-| `ATOMUICLI_CTRL001` | 控件不存在。 |
-| `ATOMUICLI_DATA001` | 文档区块不可用。 |
-
-## 测试
-
-- 默认输出所有非空 section。
-- `--section api` 只输出 API。
-- markdown code fence 语言稳定。
-- section 缺失时不输出空标题。
-- JSON section 顺序稳定。
-
+- `src/AtomUI.Cli.Metadata/Commands/DocCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/DocCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/DocumentationQueryService.cs`

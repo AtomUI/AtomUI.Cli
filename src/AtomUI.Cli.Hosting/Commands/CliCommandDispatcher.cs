@@ -7,7 +7,8 @@ public sealed class CliCommandDispatcher(
     CliCommandParser parser,
     IServiceScopeFactory serviceScopeFactory,
     IOutputWriter? outputWriter = null,
-    IErrorWriter? errorWriter = null)
+    IErrorWriter? errorWriter = null,
+    IJsonOutputSerializer? jsonOutputSerializer = null)
 {
     public async ValueTask<AtomUICliResult> DispatchAsync(
         IReadOnlyList<string> args,
@@ -51,10 +52,29 @@ public sealed class CliCommandDispatcher(
             return;
         }
 
-        if (result.IsSuccess && result.Payload is string text && outputWriter is not null)
+        if (result.IsSuccess && outputWriter is not null)
         {
+            var text = format == OutputFormat.Json
+                ? (jsonOutputSerializer ?? new AtomUI.Cli.Hosting.Output.JsonOutputSerializer()).SerializeResult(commandName, result)
+                : RenderTextPayload(result.Payload);
+
+            if (text is null)
+            {
+                return;
+            }
+
             await outputWriter.WriteLineAsync(text, cancellationToken);
         }
+    }
+
+    private static string? RenderTextPayload(object? payload)
+    {
+        return payload switch
+        {
+            null => null,
+            string text => text,
+            _ => payload.ToString()
+        };
     }
 
     private static string GetFallbackCommandName(IReadOnlyList<string> args)

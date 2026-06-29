@@ -1,8 +1,8 @@
-# Knowledge Query Commands 详细设计
+# 知识查询类命令共享设计
 
-## 范围
+知识查询类命令由 `AtomUICliMetadataModule` 贡献，默认只读，面向开发者、CI 和 Agent。它们只读取 metadata snapshot，不读取用户项目，不访问网络，不加载 AtomUI 运行时程序集。
 
-本文档细化只读知识查询命令：
+适用命令：
 
 - `list`
 - `info`
@@ -14,177 +14,162 @@
 - `package`
 - `changelog`
 
-这些命令只读取 metadata 快照和可选数据根，不读取用户项目，不访问网络，不写文件。
+## 共享执行管线
 
-## 共享服务
-
-| 服务 | 使用命令 |
-| --- | --- |
-| `IMetadataRootResolver` | 全部。 |
-| `IVersionIndexLoader` | 全部。 |
-| `IControlQueryService` | `list`、`info`、`doc`、`demo`、`token`、`semantic`、`changelog`。 |
-| `IPackageQueryService` | `list`、`info`、`package`、`changelog`。 |
-| `IDemoQueryService` | `demo`、`doc`。 |
-| `ITokenQueryService` | `token`、`doc`、`design.md`。 |
-| `ISemanticPartQueryService` | `semantic`、`doc`。 |
-| `IChangelogQueryService` | `changelog`、`doc`。 |
-| `IDesignDocumentQueryService` | `design.md`。 |
-
-## 版本解析
-
-知识查询命令统一使用 `TargetVersionResolver`：
-
-1. `--target-version`。
-2. 当前目录项目包引用中的 AtomUI 版本，仅读取项目文件，不执行 restore。
-3. metadata 内置最高稳定版本。
-
-解析结果：
-
-```csharp
-public sealed record TargetVersionInfo(
-    string Version,
-    string MajorVersion,
-    TargetVersionSource Source);
+```text
+CommandOptions
+  -> GlobalCliOptions
+  -> TargetVersionResolver
+  -> ProductFilterResolver
+  -> DataRootResolver
+  -> MetadataSnapshotIndexProvider
+  -> QueryService
+  -> PayloadBuilder
+  -> OutputWriter
 ```
 
-如果用户提供非法版本，返回 `ATOMUICLI_ARG002`。
+每个命令 handler 只负责参数校验、调用 query service、构造命令 payload 和返回 `AtomUICliResult`。metadata 加载、schema 校验、索引构建、商业可见性过滤和 fuzzy suggestion 都在 metadata service 层完成。
 
-## 命令 DTO
-
-### list
+## 共享上下文
 
 ```csharp
-public sealed record ListCommandPayload(
-    string Kind,
+public sealed record MetadataCommandContext(
+    GlobalCliOptions Global,
     string TargetVersion,
-    IReadOnlyList<ListItemDto> Items);
+    ProductFilter ProductFilter,
+    MetadataRootSet DataRoots,
+    string Language,
+    bool Detail);
 ```
 
-`Kind` 使用枚举绑定：`controls`、`products`、`packages`、`categories`。
+上下文创建规则：
 
-### info
+1. `--target-version` 未传入时使用内置 metadata 默认版本。
+2. `--product` 未传入时查询所有可见产品。
+3. `--data-root` 可追加外部数据根，优先级高于内置公开数据。
+4. 商业数据根只影响 visibility 允许的产品和字段。
+5. `--lang` 只影响文案字段选择，不影响结构化 ID。
+
+## Query Service 契约
+
+### IControlQueryService
 
 ```csharp
-public sealed record InfoCommandPayload(
-    ControlSummaryDto Summary,
-    ControlApiDto? Api,
-    RegistrationDto? Registration,
-    IReadOnlyList<TokenDto>? Tokens,
-    IReadOnlyList<SemanticPartDto>? SemanticParts,
-    IReadOnlyList<DemoSummaryDto>? Demos);
+public interface IControlQueryService
+{
+    ValueTask<ControlQueryResult> QueryAsync(
+        ControlQuery query,
+        CancellationToken cancellationToken);
+}
 ```
 
-`--include` 控制可空字段。
+`ControlQuery` 包含 normalized name、product filter、target version、strict flag、include sections。
 
-### doc
+`ControlQueryResult` 分支：
+
+| 分支 | 含义 | 命令映射 |
+| --- | --- | --- |
+| `Found` | 找到唯一控件。 | 输出 payload。 |
+| `NotFound` | 无匹配控件。 | `ATOMUICLI_CTRL001`，带 suggestions。 |
+| `Ambiguous` | 多个产品或别名匹配。 | `ATOMUICLI_CTRL002`，带 candidates。 |
+| `DataUnavailable` | 快照、schema 或数据根不可用。 | `ATOMUICLI_DATA001` 至 `ATOMUICLI_DATA005`。 |
+
+### IPackageQueryService
+
+负责包、产品、依赖、冲突、替代关系和注册入口查询。
+
+结果分支：
+
+- `FoundPackage`
+- `FoundProduct`
+- `NotFound`
+- `Ambiguous`
+- `ConflictMetadataUnavailable`
+- `DataUnavailable`
+
+### ITokenQueryService
+
+负责全局 Token、控件 Token、继承链和默认值查询。Token 查询必须区分 `global`、`control` 和 `alias`。
+
+### IDemoQueryService
+
+负责 demo list、demo detail、code-only 输出和 demo metadata 查询。Demo 结果必须包含来源、语言、依赖包、适用版本和是否商业可见。
+
+### IDocumentationQueryService
+
+负责控件文档、设计文档和 section 过滤。Markdown 输出必须保持标题顺序稳定。
+
+### ISemanticPartQueryService
+
+负责 semantic parts、template part、pseudo class、可定制节点和样式入口查询。
+
+### IChangelogQueryService
+
+负责版本范围解析、breaking-only 过滤、目标控件/包过滤和迁移提示关联。
+
+## Payload 通用字段
+
+所有知识查询 JSON payload 必须包含：
 
 ```csharp
-public sealed record DocCommandPayload(
-    string Control,
-    IReadOnlyList<DocumentSectionDto> Sections);
+public abstract record KnowledgeCommandPayloadBase(
+    string SchemaVersion,
+    string Command,
+    string TargetVersion,
+    ProductFilterDto ProductFilter,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-Markdown 输出直接由 `Sections` 渲染，不拼接 ad hoc 字符串。
+排序规则：
 
-### demo
+- 产品按 metadata product order。
+- 控件按 category order，再按 display order。
+- 包按 product order，再按 package id ordinal。
+- Token 按 scope、category、name。
+- Demo 按 metadata order。
+- Changelog 按 version desc，再按 product/control。
 
-```csharp
-public sealed record DemoCommandPayload(
-    string Control,
-    IReadOnlyList<DemoDto> Demos);
-```
+## 商业数据可见性
 
-示例代码来源于构建期提取的 AXAML、code-behind 和 ViewModel 片段。
+知识查询必须统一处理商业数据：
 
-### token
-
-```csharp
-public sealed record TokenCommandPayload(
-    string Scope,
-    string? Control,
-    IReadOnlyList<TokenDto> Tokens);
-```
-
-Token 来源包括 shared token、component token 和 mapped token。
-
-### semantic
-
-```csharp
-public sealed record SemanticCommandPayload(
-    string Control,
-    IReadOnlyList<SemanticPartDto> Parts,
-    TemplateSummaryDto? Template);
-```
-
-semantic parts 来自 TemplatePart、PseudoClasses、template selector 和显式 metadata。
-
-### design.md
-
-```csharp
-public sealed record DesignMarkdownCommandPayload(
-    IReadOnlyList<DocumentSectionDto> Sections,
-    IReadOnlyList<TokenDto> ReferencedTokens);
-```
-
-文档按 major version 存储，缺失时返回 `ATOMUICLI_DATA001`。
-
-### package
-
-```csharp
-public sealed record PackageCommandPayload(
-    IReadOnlyList<PackageDto> Packages,
-    IReadOnlyList<PackageConflictDto> Conflicts,
-    IReadOnlyList<RegistrationDto> RegistrationMethods);
-```
-
-### changelog
-
-```csharp
-public sealed record ChangelogCommandPayload(
-    VersionRangeDto Range,
-    IReadOnlyList<ChangelogEntryDto> Entries);
-```
-
-支持 query mode 和 diff mode。diff mode 比较两个版本快照中的 API、Token 和包关系。
-
-## 错误处理
-
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。下表只列知识查询类命令可能返回的错误码子集。
-
-| 场景 | 错误码 |
+| 场景 | 行为 |
 | --- | --- |
-| 命令参数非法 | `ATOMUICLI_ARG002` |
-| 控件不存在 | `ATOMUICLI_CTRL001` |
-| 控件名歧义 | `ATOMUICLI_CTRL002` |
-| 示例不存在 | `ATOMUICLI_CTRL003` |
-| Token 不存在 | `ATOMUICLI_CTRL004` |
-| semantic part 不存在 | `ATOMUICLI_CTRL005` |
-| 包不存在 | `ATOMUICLI_PKG001` |
-| 包 ID 歧义 | `ATOMUICLI_PKG002` |
-| metadata 不可用 | `ATOMUICLI_DATA001` |
-| schema 不兼容 | `ATOMUICLI_DATA002` |
-| 外部数据 schema 不兼容 | `ATOMUICLI_DATA003` |
-| 版本索引缺失 | `ATOMUICLI_DATA004` |
+| 未配置商业数据根 | 公开数据正常输出；商业产品只输出包级提示，不伪造 API。 |
+| 商业数据根 schema 不兼容 | 返回 `ATOMUICLI_DATA002`。 |
+| 商业产品未知 | 返回 `ATOMUICLI_DATA005` 或 `ATOMUICLI_PKG001`，按查询目标决定。 |
+| 字段不可见 | JSON 不输出该字段；text/markdown 给出“数据不可用”提示。 |
+| 查询全产品 | 默认只包含当前可见产品。 |
 
-失败结果必须包含候选建议，候选建议使用 metadata index 计算，不访问网络。
+## 错误映射
 
-## AOT-first 要求
+| 场景 | 错误码 | 退出码 |
+| --- | --- | --- |
+| 参数缺失或非法 include/section | `ATOMUICLI_ARG001` / `ATOMUICLI_ARG002` | `2` |
+| 控件不存在 | `ATOMUICLI_CTRL001` | `3` |
+| 控件歧义 | `ATOMUICLI_CTRL002` | `3` |
+| 包或产品不存在 | `ATOMUICLI_PKG001` | `3` |
+| 数据不可用 | `ATOMUICLI_DATA001` | `4` |
+| schema 不兼容 | `ATOMUICLI_DATA002` | `4` |
+| 商业数据不可用 | `ATOMUICLI_DATA004` | `4` |
 
-- 所有 payload DTO 纳入 source generated JSON context。
-- Markdown 渲染器是静态代码。
-- 版本解析不依赖动态 package restore。
-- diff mode 只比较快照 DTO，不加载历史程序集。
+## AOT-first 约束
 
-## 测试矩阵
+- DTO 必须纳入 source generated JSON context。
+- Query service 通过显式 DI 注册，不通过扫描发现。
+- metadata index 不通过运行时反射读取控件程序集。
+- fuzzy suggestion 只在失败分支执行，不进入热路径。
+- markdown renderer 使用显式 formatter，不动态读取模板类型。
 
-| 命令 | 必测场景 |
-| --- | --- |
-| `list` | 默认 controls、product filter、since filter。 |
-| `info` | include 字段裁剪、模糊建议、strict。 |
-| `doc` | section 渲染和 markdown 稳定性。 |
-| `demo` | 列表模式、指定 demo、代码片段语言。 |
-| `token` | global/control scope、name 查询。 |
-| `semantic` | part 查询、template summary。 |
-| `design.md` | major version 文档选择。 |
-| `package` | 依赖、冲突、注册方法。 |
-| `changelog` | range query、diff mode、control/package filter。 |
+## 共享测试基线
+
+每个知识查询命令至少覆盖：
+
+- 默认版本查询成功。
+- 指定 `--target-version` 查询成功。
+- `--product` 过滤。
+- 外部 `--data-root` 覆盖内置数据。
+- 商业字段不可见过滤。
+- `--format json` 稳定 schema。
+- 查询目标不存在时 suggestions 稳定。
+- command catalog 注册。

@@ -1,10 +1,41 @@
 # dotnet atomui semantic 详细设计
 
-## 目标
+## 1. 命令定位
 
-`semantic` 查询控件的可定制结构，包括 template part、pseudo class、selector、状态和关联 token。它用于安全编写样式和模板覆盖。
+`semantic` 查询控件 semantic parts、template parts、pseudo classes 和可定制节点，服务于样式定制和 Agent 生成控件模板相关代码。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui semantic Button
+dotnet atomui semantic Button --part root
+dotnet atomui semantic Button --include-template --detail --format json
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `control` | string | 必填 | 缺失返回 `ATOMUICLI_ARG001` | 控件名。 |
+| `--part` | string | null | 不存在返回 `ATOMUICLI_CTRL005` | 指定 part。 |
+| `--include-template` | bool | false | 无 | 输出模板结构摘要，不输出完整模板源码。 |
+| `--strict` | bool | false | 无 | 控件名和 part 名要求精确匹配。 |
+| `--detail` | global bool | false | 无 | 输出样式状态、伪类和可用 Token。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record SemanticCommandOptions(
@@ -12,61 +43,84 @@ public sealed record SemanticCommandOptions(
     string Control,
     string? Part,
     bool IncludeTemplate,
-    bool Strict) : IAtomUICliCommandOptions;
+    bool Strict,
+    bool Detail) : IAtomUICliCommandOptions;
 ```
 
-## Payload
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IControlQueryService`
+- `ISemanticPartQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 校验控件名、part 和 detail 选项。
+2. 查询控件。
+3. 查询 semantic parts。
+4. 应用 part 过滤。
+5. 构建 payload。
+6. 输出 text/json/markdown。
+
+## 8. 领域服务契约
+
+```csharp
+public interface ISemanticPartQueryService
+{
+    ValueTask<SemanticPartQueryResult> QueryAsync(
+        SemanticPartQuery query,
+        CancellationToken cancellationToken);
+}
+```
+
+分支：`Found`、`PartNotFound`、`ControlNotFound`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
 public sealed record SemanticCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    string Control,
-    IReadOnlyList<SemanticPartDto> Parts,
-    TemplateSummaryDto? Template);
+    ControlSummaryDto Control,
+    IReadOnlyList<SemanticPartDto> SemanticParts,
+    IReadOnlyList<TemplatePartDto> TemplateParts,
+    IReadOnlyList<PseudoClassDto> PseudoClasses,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+## 10. 输出格式
 
-依赖：
+- text：显示 part 名称、用途、可定制入口。
+- json：输出完整字段。
+- markdown：输出 part 表格和模板摘要。
 
-- `IControlQueryService`
-- `ISemanticPartQueryService`
-- `ITokenQueryService`
-- `IOutputWriter`
+## 11. 错误与退出码
 
-执行步骤：
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_ARG001` | 缺少控件名 | `2` |
+| `ATOMUICLI_CTRL001` | 控件不存在 | `3` |
+| `ATOMUICLI_CTRL005` | semantic part 不存在 | `3` |
+| `ATOMUICLI_DATA001` | semantic 数据不可用 | `4` |
 
-1. 解析控件。
-2. 查询 semantic parts。
-3. 如果指定 `Part`，解析唯一 part。
-4. `--include-template` 时加载 template summary。
-5. `--detail` 时附加 states、pseudo classes 和 token 关联。
-6. 输出结果。
+## 12. AOT-first 约束
 
-## 输出规则
+semantic 数据来自 snapshot，不读取 XAML 模板文件。DTO 纳入 JSON context。
 
-- `text`：简表输出 part、role、selector。
-- `json`：输出 selector、states、tokens、source。
-- `markdown`：按 part 分节。
+## 13. 测试矩阵
 
-## 错误
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| all | `semantic Button` | 输出所有区块。 |
+| part | `--part root` | 单 part。 |
+| template | `--include-template` | 输出模板摘要。 |
+| missing part | `--part none` | `ATOMUICLI_CTRL005`。 |
+| json | `--format json` | payload 稳定。 |
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+## 14. 实现文件建议
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG001` | 缺少控件名。 |
-| `ATOMUICLI_CTRL001` | 控件不存在。 |
-| `ATOMUICLI_CTRL005` | part 不存在。 |
-| `ATOMUICLI_DATA001` | semantic 数据不可用。 |
-
-## 测试
-
-- TemplatePart 进入 parts。
-- PseudoClasses 进入 states。
-- `--part` 能精准裁剪。
-- `--include-template` 输出摘要而不是完整模板源码。
-- 不存在 part 返回候选建议。
-
+- `src/AtomUI.Cli.Metadata/Commands/SemanticCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/SemanticCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/SemanticPartQueryService.cs`

@@ -81,6 +81,7 @@ json 输出以 section 数组表达，便于 Agent 按需截取上下文。
 | `ATOMUICLI_ARG002` | `2` | `--section` 非法。 |
 | `ATOMUICLI_PKG001` | `3` | 指定产品不存在。 |
 | `ATOMUICLI_DATA001` | `4` | 设计文档数据不可用。 |
+| `ATOMUICLI_DATA005` | `4` | 目标版本无法解析到可用快照。 |
 
 ## AOT 约束
 
@@ -95,4 +96,11 @@ json 输出以 section 数组表达，便于 Agent 按需截取上下文。
 - 产品过滤影响控件选型建议。
 - markdown 输出标题稳定。
 - json 输出 section 顺序稳定。
+- 目标版本不存在时返回 `ATOMUICLI_DATA005`。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

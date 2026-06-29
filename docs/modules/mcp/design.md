@@ -1,38 +1,50 @@
 # AtomUICliMcpModule 详细设计
 
-## 目标
+## 1. 模块定位
 
-`AtomUICliMcpModule` 把 AtomUI Cli 的只读查询和诊断能力暴露为 MCP stdio server。它复用命令背后的 query service，但不直接调用命令行 parser，也不暴露写入类命令。
+`AtomUICliMcpModule` 将 AtomUI Cli 的只读知识查询和项目分析能力暴露为 MCP stdio server。它复用 Metadata 和 Project Analysis 的领域服务，不调用命令行 parser，不暴露默认写入 tool。
 
-## 项目与命名空间
+## 2. 模块注册
 
-| 项目 | 命名空间 | 说明 |
-| --- | --- | --- |
-| `src/AtomUI.Cli.Mcp` | `AtomUI.Cli.Mcp` | MCP 模块和 server。 |
-| `src/AtomUI.Cli.Mcp` | `AtomUI.Cli.Mcp.Transport` | stdio transport。 |
-| `src/AtomUI.Cli.Mcp` | `AtomUI.Cli.Mcp.Tools` | tool descriptor 和 handler。 |
-| `src/AtomUI.Cli.Mcp` | `AtomUI.Cli.Mcp.JsonRpc` | JSON-RPC DTO 和错误映射。 |
+| 字段 | 值 |
+| --- | --- |
+| 模块类型 | `AtomUICliMcpModule` |
+| 依赖 | `AtomUICliMetadataModule`、`AtomUICliProjectAnalysisModule` |
+| 命令贡献 | `mcp` |
+| MCP tool 贡献 | `atomui_list`、`atomui_info`、`atomui_doc`、`atomui_demo`、`atomui_token`、`atomui_semantic`、`atomui_package`、`atomui_changelog`、`atomui_doctor` |
+| 写入能力 | 默认无 |
 
-## Server 模型
+## 3. Server 生命周期
 
-```csharp
-public interface IMcpServer
-{
-    ValueTask RunAsync(McpServerOptions options, CancellationToken cancellationToken);
-}
+```text
+dotnet atomui mcp
+  -> McpCommandHandler
+  -> McpStdioServer.RunAsync
+  -> initialize
+  -> tools/list
+  -> tools/call
+  -> shutdown
 ```
 
-server 组件：
+MCP server 复用 GenericHost root provider。每次 `tools/call` 创建独立 invocation scope，不允许 singleton 保存 request 状态。
 
-| 类型 | 职责 |
-| --- | --- |
-| `McpStdioServer` | stdio 主循环、request 读取、response 写入。 |
-| `McpRequestRouter` | `initialize`、`tools/list`、`tools/call` 路由。 |
-| `McpToolDescriptorCatalog` | 冻结 tool catalog。 |
-| `McpToolInvocationScopeFactory` | 每次 tool 调用创建独立 DI scope。 |
-| `McpErrorMapper` | AtomUI Cli 错误到 JSON-RPC error 的映射。 |
+## 4. Tool Descriptor
 
-## Tool 契约
+```csharp
+public sealed record McpToolDescriptor(
+    string Name,
+    string Description,
+    JsonSchemaDescriptor InputSchema,
+    Type RequestType,
+    Type ResponseType,
+    Type HandlerType,
+    bool IsReadOnly,
+    string RelatedCommand);
+```
+
+descriptor catalog 必须在 Host build 前冻结。`tools/list` 只读取 catalog，不解析 handler。
+
+## 5. Tool Handler 契约
 
 ```csharp
 public interface IAtomUIMcpToolHandler<in TRequest, TResponse>
@@ -44,85 +56,67 @@ public interface IAtomUIMcpToolHandler<in TRequest, TResponse>
 }
 ```
 
-tool descriptor 包含：
+handler 职责：
 
-- tool name。
-- description。
-- input schema。
-- request DTO type。
-- response DTO type。
-- handler type。
-- read-only 标志。
+- 校验 request DTO。
+- 调用 Metadata 或 Project Analysis 领域服务。
+- 返回 response DTO。
+- 不写 stdout/stderr。
+- 不创建 scope。
 
-request/response DTO 必须和 CLI JSON 输出保持字段语义一致，但可以为了 MCP tool schema 拆分为更小对象。
+## 6. 默认 tools
 
-## 默认 tools
+| Tool | 领域服务 | 说明 |
+| --- | --- | --- |
+| `atomui_list` | `IControlQueryService`、`IPackageQueryService` | 列出控件、产品、包。 |
+| `atomui_info` | `IControlQueryService` | 查询控件详情。 |
+| `atomui_doc` | `IDocumentationQueryService` | 查询文档。 |
+| `atomui_demo` | `IDemoQueryService` | 查询示例。 |
+| `atomui_token` | `ITokenQueryService` | 查询 Token。 |
+| `atomui_semantic` | `ISemanticPartQueryService` | 查询 semantic parts。 |
+| `atomui_package` | `IPackageQueryService` | 查询包和冲突。 |
+| `atomui_changelog` | `IChangelogQueryService` | 查询变更记录。 |
+| `atomui_doctor` | `IProjectDiagnosticEngine` | 只读项目诊断。 |
 
-| Tool | 主要服务 |
+## 7. JSON-RPC 错误映射
+
+| 场景 | JSON-RPC code | CLI 错误域 |
+| --- | --- | --- |
+| JSON parse error | `-32700` | `ATOMUICLI_MCP` |
+| method 不存在 | `-32601` | `ATOMUICLI_MCP` |
+| 参数非法 | `-32602` | `ATOMUICLI_ARG` |
+| tool 不存在 | `-32601` | `ATOMUICLI_MCP` |
+| 数据不可用 | `-32004` | `ATOMUICLI_DATA` |
+| 项目诊断失败 | `-32005` | `ATOMUICLI_PRJ` / `ATOMUICLI_AOT` |
+| 未分类错误 | `-32603` | `ATOMUICLI_SYS` |
+
+stdout 只输出 JSON-RPC response；stderr 只输出 server diagnostics。
+
+## 8. DI 生命周期
+
+| 服务 | 生命周期 |
 | --- | --- |
-| `atomui_list` | `IControlQueryService`、`IPackageQueryService`。 |
-| `atomui_info` | `IControlQueryService`。 |
-| `atomui_doc` | 文档聚合服务。 |
-| `atomui_demo` | `IDemoQueryService`。 |
-| `atomui_token` | `ITokenQueryService`。 |
-| `atomui_design_md` | `IDesignDocumentQueryService`。 |
-| `atomui_semantic` | `ISemanticPartQueryService`。 |
-| `atomui_package` | `IPackageQueryService`。 |
-| `atomui_changelog` | `IChangelogQueryService`。 |
-| `atomui_doctor` | `IProjectDiagnosticEngine`。 |
+| `McpToolDescriptorCatalog` | Singleton |
+| `McpStdioServer` | Singleton |
+| `McpRequestRouter` | Singleton |
+| `McpToolInvocationContext` | Scoped |
+| tool handlers | Transient |
 
-`atomui_doctor` 只能读取项目，不写入。
+## 9. AOT-first 约束
 
-## JSON-RPC 处理
-
-支持方法：
-
-- `initialize`
-- `tools/list`
-- `tools/call`
-- `shutdown`
-
-错误映射：
-
-CLI 错误码来源遵守 [AtomUI Cli 错误码标准](../../commands/error-code-standard.md)。MCP 层只负责把 `AtomUICliError` 映射到 JSON-RPC error code，不创建新的错误语义。
-
-| CLI 错误 | JSON-RPC error code |
-| --- | --- |
-| 参数错误 | `-32602` |
-| tool 不存在 | `-32601` |
-| 数据不可用 | `-32004` |
-| 项目诊断失败 | `-32005` |
-| 未分类错误 | `-32603` |
-
-stdout 只输出 JSON-RPC response，stderr 输出 server diagnostics。
-
-## 命令贡献
-
-```csharp
-context.Commands.Add<McpCommandOptions, McpCommandHandler>("mcp");
-```
-
-MCP tools 通过 `ConfigureAtomUICliMcpTools` 显式注册：
-
-```csharp
-context.Tools.Add<AtomUIInfoToolRequest, AtomUIInfoToolResponse, AtomUIInfoToolHandler>("atomui_info");
-```
-
-## AOT-first 实现要求
-
-- tool catalog 显式注册或 source generated。
-- input schema 由静态 descriptor 构建，不反射 DTO property。
-- JSON-RPC DTO、tool request 和 response 都纳入 source generated context。
+- tool catalog 显式贡献或 source generated。
+- input schema 静态定义，不反射 DTO property。
+- request/response DTO 纳入 source generated JSON context。
 - 不动态暴露命令 handler 为 MCP tool。
+- 不动态加载外部 tool assembly。
 
-## 测试设计
+## 10. 测试矩阵
 
-| 测试文件 | 覆盖点 |
+| 测试 | 覆盖 |
 | --- | --- |
-| `McpRequestRouterTests` | initialize、tools/list、tools/call。 |
-| `McpToolCatalogTests` | tool name 去重和 read-only 约束。 |
-| `McpInvocationScopeTests` | 每次调用独立 scope。 |
-| `McpErrorMapperTests` | CLI error 到 JSON-RPC error 映射。 |
-| `McpStdioServerTests` | EOF、取消和 malformed request。 |
-
-测试应使用内存 stream 代替真实 stdin/stdout。
+| initialize | protocol metadata。 |
+| tools/list | catalog 输出稳定。 |
+| tools/call | 每次 invocation 独立 scope。 |
+| malformed request | JSON-RPC error。 |
+| tool error mapping | CLI error 到 JSON-RPC。 |
+| cancellation | request 取消和 server 关闭。 |

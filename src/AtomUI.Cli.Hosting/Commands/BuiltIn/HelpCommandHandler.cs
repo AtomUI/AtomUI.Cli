@@ -2,7 +2,7 @@ using AtomUI.Cli;
 
 namespace AtomUI.Cli.Hosting.Commands.BuiltIn;
 
-public sealed class HelpCommandHandler : IAtomUICliCommandHandler<BuiltInCommandOptions>
+public sealed class HelpCommandHandler(CommandManifestCatalog commandManifests) : IAtomUICliCommandHandler<BuiltInCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(
         BuiltInCommandOptions options,
@@ -10,6 +10,12 @@ public sealed class HelpCommandHandler : IAtomUICliCommandHandler<BuiltInCommand
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(AtomUICliResult.Success("dotnet atomui <command> [options]"));
+
+        var commandLines = commandManifests.Manifests
+            .OrderBy(manifest => manifest.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(manifest => $"  {manifest.Name}");
+        var text = $"dotnet atomui <command> [options]{Environment.NewLine}{string.Join(Environment.NewLine, commandLines)}";
+
+        return ValueTask.FromResult(AtomUICliResult.Success(text));
     }
 }

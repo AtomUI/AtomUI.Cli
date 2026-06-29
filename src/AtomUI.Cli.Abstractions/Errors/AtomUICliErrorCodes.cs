@@ -14,9 +14,9 @@ public static class AtomUICliErrorCodes
 
     public const string DataUnavailable = "ATOMUICLI_DATA001";
     public const string DataSchemaIncompatible = "ATOMUICLI_DATA002";
-    public const string ExternalDataSchemaIncompatible = "ATOMUICLI_DATA003";
-    public const string DataVersionIndexMissing = "ATOMUICLI_DATA004";
-    public const string DataUnauthorized = "ATOMUICLI_DATA005";
+    public const string DataReferenceMissing = "ATOMUICLI_DATA003";
+    public const string DataExternalUnavailable = "ATOMUICLI_DATA004";
+    public const string DataVersionUnresolved = "ATOMUICLI_DATA005";
 
     public const string ControlNotFound = "ATOMUICLI_CTRL001";
     public const string ControlAmbiguous = "ATOMUICLI_CTRL002";
@@ -39,7 +39,8 @@ public static class AtomUICliErrorCodes
     public const string McpToolNotFound = "ATOMUICLI_MCP002";
     public const string McpToolInvocationFailed = "ATOMUICLI_MCP003";
 
-    public const string SetupConfigReadFailed = "ATOMUICLI_SETUP001";
+    public const string SetupTargetProbeFailed = "ATOMUICLI_SETUP001";
     public const string SetupConflict = "ATOMUICLI_SETUP002";
-    public const string SetupWriteFailed = "ATOMUICLI_SETUP003";
+    public const string SetupConfigReadFailed = "ATOMUICLI_SETUP003";
+    public const string SetupWriteFailed = "ATOMUICLI_SETUP004";
 }

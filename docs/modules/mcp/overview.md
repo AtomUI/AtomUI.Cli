@@ -82,3 +82,10 @@ public sealed partial class AtomUICliMcpModule : AtomUICliModule
 - 每次 invocation 创建独立 scope。
 - tool error 映射。
 - `atomui_doctor` 不写入用户项目。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [模块设计索引](../overview.md)
+- [整体架构设计](../../architecture/atomui-cli-architecture-design.md)
+- [集成与写入命令共享设计](../../commands/integration-write-design.md)

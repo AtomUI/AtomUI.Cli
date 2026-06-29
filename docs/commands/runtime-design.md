@@ -6,7 +6,16 @@ AtomUI Cli 命令运行时负责把 `dotnet atomui ...` 调用转换为强类型
 
 ## 显式注册
 
-所有命令通过模块 contribution catalog 注册：
+命令运行时分为两层注册：
+
+| 层级 | 作用 | 是否需要模块实例 |
+| --- | --- | --- |
+| `CommandManifestCatalog` | 启动早期识别命令、所属模块、额外 required modules、分组、格式、读写属性和项目要求。 | 否 |
+| `CliCommandDescriptorCatalog` | active modules 生命周期完成后，提供 options factory、handler 类型和执行元数据。 | 是，仅 active modules |
+
+所有公开命令都必须先进入 manifest，再由所属模块贡献真实 descriptor。manifest 来自显式代码或 source generator，不能通过程序集扫描生成。
+
+模块贡献 descriptor 示例：
 
 ```csharp
 context.Commands.Add<InfoCommandOptions, InfoCommandHandler>("info");
@@ -27,6 +36,48 @@ descriptor 必须包含：
 | `RequiresWriteConfirmation` | 是否需要 `--write`。 |
 
 禁止通过程序集扫描、attribute scanning 或命名约定发现命令。
+
+## 命令预解析
+
+完整 options parser 不能在模块激活前运行，因为 handler、options factory 和领域服务都属于模块贡献。启动早期只允许做轻量预解析：
+
+```text
+Raw args
+  -> CommandPreParser
+  -> command name + global output format + help/version shortcut
+  -> CommandManifestCatalog lookup
+  -> ModuleActivationPlanner
+```
+
+预解析规则：
+
+- `--version` 和 `-v` 映射到 `version`。
+- 空参数、`--help` 和 `-h` 映射到 `help`。
+- `help <command>` 不激活全部模块，先读取 manifest；需要详细帮助时只激活目标命令所属模块。
+- `--format` 可以在预解析阶段校验目标命令是否支持该格式。
+- 未知命令从 manifest 返回参数错误和 suggestions，不进入模块生命周期。
+- 预解析不绑定命令私有选项，不读取文件系统，不访问数据根。
+
+## 按需模块激活
+
+预解析完成后，`ModuleActivationPlanner` 计算 active modules：
+
+```text
+active modules = Core + command owner module + command required modules + hard dependency closure
+```
+
+示例：
+
+| 命令 | active modules |
+| --- | --- |
+| `version` | Core |
+| `info Button` | Core、Metadata |
+| `doctor ./app` | Core、Project Analysis、Metadata |
+| `setup` | Core、Setup |
+| `add datagrid` | Core、Setup、Metadata |
+| `mcp` | Core、MCP |
+
+只有 active modules 可以执行 `ConfigureServices`、贡献真实 command descriptor、进入 `Initialize` 和 `Shutdown`。未激活模块不能创建实例，不能注册服务，不能执行生命周期钩子。
 
 ## 全局选项绑定
 
@@ -106,7 +157,10 @@ handler 不创建未登记错误码，也不直接设置进程退出码。
 ## Handler 生命周期
 
 ```text
-CliCommandDispatcher
+CommandPreParser
+  -> ModuleActivationPlanner
+  -> Active ModuleHost lifecycle
+  -> CliCommandDispatcher
   -> create IServiceScope
   -> bind GlobalCliOptions and command options
   -> resolve handler
@@ -123,6 +177,23 @@ handler 规则：
 - 不接收根 `IServiceProvider`。
 - 不直接访问文件系统，除非该命令本身是项目分析或写入命令。
 - 不调用其他命令 handler 作为业务复用；共享逻辑放 service。
+
+## MCP 按需调用
+
+`mcp` 命令启动时只激活 Core 和 MCP 模块。MCP server 的 tool manifest 可以来自 `CommandManifestCatalog` 或独立 `McpToolManifestCatalog`。`tools/list` 不激活所有领域模块。
+
+`tools/call` 必须根据 tool 所属模块创建一次 invocation activation plan：
+
+```text
+MCP tools/call
+  -> tool manifest lookup
+  -> owner module activation
+  -> invocation scope
+  -> resolve tool handler / domain service
+  -> write JSON-RPC response
+```
+
+这样可以避免 MCP 长驻进程启动时加载 metadata、project analysis、setup 和商业数据模块的全部资源。
 
 ## 输出格式
 
@@ -169,6 +240,8 @@ JSON 输出需要包含：
 | `CommandCatalogTests` | 重名命令、格式能力、只读标记。 |
 | `CommandParserTests` | 全局选项、子命令参数、非法格式。 |
 | `CommandDispatcherTests` | scope、handler 生命周期、取消传播。 |
+| `CommandPreParserTests` | `--version`、`help`、未知命令、format 预校验。 |
+| `ModuleActivationTests` | 单命令只激活 Core、所属模块、命令级 required modules 和硬依赖模块。 |
 | `CommandOutputTests` | text/json/markdown 格式稳定。 |
 | `CommandErrorContractTests` | 所有命令声明的错误码都存在于 error code catalog。 |
 | `CommandAotTests` | JSON context 覆盖所有 payload DTO。 |

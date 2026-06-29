@@ -87,7 +87,8 @@ markdown 输出适合发布说明和迁移上下文。
 | `ATOMUICLI_ARG002` | `2` | 版本范围或 severity 非法。 |
 | `ATOMUICLI_CTRL001` | `3` | 控件不存在。 |
 | `ATOMUICLI_PKG001` | `3` | 包不存在。 |
-| `ATOMUICLI_DATA004` | `4` | 版本索引缺失。 |
+| `ATOMUICLI_DATA001` | `4` | changelog 数据不可用。 |
+| `ATOMUICLI_DATA005` | `4` | 版本或版本范围无法解析到可用快照。 |
 
 ## AOT 约束
 
@@ -101,5 +102,11 @@ markdown 输出适合发布说明和迁移上下文。
 - `<from>..<to>` 范围过滤正确。
 - 控件和包过滤可组合。
 - breaking severity 可单独过滤。
-- 不存在版本返回 `ATOMUICLI_DATA004`。
+- 不存在版本返回 `ATOMUICLI_DATA005`。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

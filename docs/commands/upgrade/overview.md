@@ -92,10 +92,11 @@ json 输出示例：
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | 目标版本非法。 |
-| `ATOMUICLI_DATA004` | `4` | 版本索引缺失。 |
-| `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
+| `ATOMUICLI_DATA001` | `4` | metadata 版本索引不可用。 |
+| `ATOMUICLI_DATA005` | `4` | 目标版本无法解析到可用快照。 |
+| `ATOMUICLI_PRJ001` | `4` | 未找到项目。 |
 | `ATOMUICLI_PKG003` | `5` | 包冲突阻止升级。 |
-| `ATOMUICLI_SETUP003` | `6` | 写入失败。 |
+| `ATOMUICLI_SETUP004` | `6` | 写入失败。 |
 
 ## AOT 约束
 
@@ -107,7 +108,13 @@ json 输出示例：
 
 - `--cli` 只输出 CLI 升级建议。
 - 项目包版本低于目标版本时生成 update action。
-- 目标版本不存在时返回 `ATOMUICLI_DATA004`。
+- 目标版本不存在时返回 `ATOMUICLI_DATA005`。
 - dry-run 不修改版本文件。
 - `--write` 只更新 AtomUI 相关包版本。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [集成与写入命令共享设计](../integration-write-design.md)
+- [错误码标准](../error-code-standard.md)

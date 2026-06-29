@@ -39,7 +39,8 @@ public sealed class ErrorCodeCatalogTests
         "ATOMUICLI_MCP003",
         "ATOMUICLI_SETUP001",
         "ATOMUICLI_SETUP002",
-        "ATOMUICLI_SETUP003"
+        "ATOMUICLI_SETUP003",
+        "ATOMUICLI_SETUP004"
     ];
 
     [Fact]

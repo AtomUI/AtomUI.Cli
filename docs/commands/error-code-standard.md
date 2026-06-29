@@ -75,9 +75,9 @@ ATOMUICLI_<DOMAIN><NNN>
 | `ATOMUICLI_MOD002` | error | `1` | 模块 contribution catalog 冲突，例如重复命令、重复 tool 或重复数据根。 |
 | `ATOMUICLI_DATA001` | error | `4` | 元数据快照、文档区块、示例数据、Token 数据或设计数据不可用。 |
 | `ATOMUICLI_DATA002` | error | `4` | 内置 metadata schema 与 CLI 支持范围不兼容。 |
-| `ATOMUICLI_DATA003` | error | `4` | 外部数据根或商业数据根 schema 不兼容。 |
-| `ATOMUICLI_DATA004` | error | `4` | 版本索引缺失、目标版本不存在或版本范围无法解析到快照。 |
-| `ATOMUICLI_DATA005` | error | `4` | 外部或商业数据根存在但授权诊断失败。 |
+| `ATOMUICLI_DATA003` | error | `4` | metadata 内部引用缺失，例如文档 section、示例、Token 或 semantic part 的数据引用不存在。 |
+| `ATOMUICLI_DATA004` | error | `4` | 外部或商业数据根缺失、不可读、授权缺失或授权诊断失败。 |
+| `ATOMUICLI_DATA005` | error | `4` | 数据根、商业 product、目标版本或版本范围无法解析到可用快照。 |
 | `ATOMUICLI_CTRL001` | error | `3` | 控件不存在。 |
 | `ATOMUICLI_CTRL002` | error | `3` | 控件名存在歧义，需要用户选择唯一目标。 |
 | `ATOMUICLI_CTRL003` | error | `3` | 示例不存在。 |
@@ -86,7 +86,7 @@ ATOMUICLI_<DOMAIN><NNN>
 | `ATOMUICLI_PKG001` | error | `3` | 包或产品不存在。 |
 | `ATOMUICLI_PKG002` | error | `3` | 包 ID、产品 ID 或别名存在歧义。 |
 | `ATOMUICLI_PKG003` | error/diagnostic | `5` | 包冲突、包版本不兼容或包组合阻止继续执行。 |
-| `ATOMUICLI_PRJ001` | error | `3` | 项目、解决方案或输入路径不存在。 |
+| `ATOMUICLI_PRJ001` | error | `4` | 项目、解决方案或输入路径不存在。 |
 | `ATOMUICLI_PRJ002` | error | `4` | 项目文件无法读取、XML 非法或项目结构无法解析。 |
 | `ATOMUICLI_PRJ003` | error | `4` | 源码文件无法读取或扫描失败。 |
 | `ATOMUICLI_PRJ010` | diagnostic | severity 聚合 | XAML namespace、控件使用或项目结构 lint finding。 |
@@ -94,9 +94,10 @@ ATOMUICLI_<DOMAIN><NNN>
 | `ATOMUICLI_MCP001` | error | `1` | MCP request 非法或无法解析。 |
 | `ATOMUICLI_MCP002` | error | `1` | MCP tool 不存在或未注册。 |
 | `ATOMUICLI_MCP003` | error | `1` | MCP tool invocation 失败。 |
-| `ATOMUICLI_SETUP001` | error | `6` | 配置文件读取、解析或目标配置探测失败。 |
+| `ATOMUICLI_SETUP001` | error | `6` | 目标配置探测失败。 |
 | `ATOMUICLI_SETUP002` | error | `6` | 写入计划存在 blocking conflict，且未传入 `--force`。 |
-| `ATOMUICLI_SETUP003` | error | `6` | 文件写入、更新、回滚或写入后校验失败。 |
+| `ATOMUICLI_SETUP003` | error | `6` | 配置文件读取或解析失败。 |
+| `ATOMUICLI_SETUP004` | error | `6` | 文件写入、更新、回滚或写入后校验失败。 |
 
 ## 选择规则
 

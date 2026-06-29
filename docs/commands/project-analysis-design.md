@@ -1,8 +1,8 @@
-# Project Analysis Commands 详细设计
+# 项目分析类命令共享设计
 
-## 范围
+项目分析类命令由 `AtomUICliProjectAnalysisModule` 贡献，默认只读，不执行 restore、build、publish，不加载用户程序集。它们把用户输入路径转换成 `ProjectAnalysisContext`，再运行统计或诊断服务。
 
-本文档细化项目分析命令：
+适用命令：
 
 - `env`
 - `doctor`
@@ -10,175 +10,158 @@
 - `lint`
 - `migrate`
 
-这些命令默认只读。它们可以读取项目文件和源码，但不执行 restore/build/publish，不加载用户程序集。
+## 共享执行管线
 
-## 共享上下文
+```text
+ProjectCommandOptions
+  -> ProjectInputResolver
+  -> ProjectPathResolver
+  -> ProjectFileReader
+  -> PackageReferenceReader
+  -> SourceFileEnumerator
+  -> XamlUsageScanner
+  -> CSharpRegistrationScanner
+  -> ProjectAnalysisContext
+  -> DiagnosticRuleCatalog / UsageAggregator / MigrationPlanner
+  -> PayloadBuilder
+  -> OutputWriter
+```
+
+命令 handler 不直接读取项目文件。文件读取、扫描、诊断规则执行和迁移规划都在 Project Analysis 领域服务中完成。
+
+## ProjectAnalysisContext
 
 ```csharp
-public sealed record ProjectCommandContext(
+public sealed record ProjectAnalysisContext(
     ProjectInput Input,
-    ProjectAnalysisContext Analysis,
-    TargetVersionInfo TargetVersion,
-    GlobalCliOptions Global);
+    IReadOnlyList<ProjectDescriptor> Projects,
+    PackageReferenceSet Packages,
+    SourceFileSet Sources,
+    XamlUsageIndex XamlUsage,
+    CSharpRegistrationIndex Registrations,
+    PublishOptionSet PublishOptions,
+    MetadataCommandContext Metadata);
 ```
 
-`ProjectCommandContextFactory` 负责：
+输入解析规则：
 
-1. 解析 path。
-2. 读取项目和包引用。
-3. 枚举源码文件。
-4. 加载 metadata。
-5. 创建不可变分析上下文。
-
-## 文件范围
-
-读取：
-
-- `.slnx`
-- `.sln`
-- `.csproj`
-- `Directory.Build.props`
-- `Directory.Packages.props`
-- `packages.lock.json`
-- `.axaml`
-- `.xaml`
-- `.cs`
-
-跳过：
-
-- `bin/`
-- `obj/`
-- `output/`
-- `outputs/`
-- `.git/`
-- `.idea/`
-- `.vs/`
-- `.referenceprojects/`
-- `GeneratedFiles/`
-
-## env
-
-DTO：
-
-```csharp
-public sealed record EnvCommandPayload(
-    EnvironmentDto Environment,
-    IReadOnlyList<ProjectEnvironmentDto> Projects,
-    IReadOnlyList<PackageReferenceDto> Packages,
-    IReadOnlyList<ProjectFileDto> Files);
-```
-
-实现重点：
-
-- SDK 信息来自当前进程和 `global.json`。
-- 包版本来自 project/props/lock file。
-- `--detail` 输出 RID、publish 属性和 AOT/trimming 属性。
-
-## doctor
-
-DTO：
-
-```csharp
-public sealed record DoctorCommandPayload(
-    ProjectSummaryDto Project,
-    DiagnosticSummaryDto Summary,
-    IReadOnlyList<ProjectDiagnosticDto> Diagnostics);
-```
-
-诊断执行：
-
-- 使用 diagnostic rule catalog。
-- `--rule` 只执行指定规则。
-- `--no-usage-scan` 跳过 XAML/C# usage scanner。
-- error 触发退出码 `5`。
-- `--fail-on-warning` 使 warning 触发退出码 `5`。
-
-## usage
-
-DTO：
-
-```csharp
-public sealed record UsageCommandPayload(
-    ProjectSummaryDto Project,
-    string GroupBy,
-    IReadOnlyList<ControlUsageDto> Items,
-    IReadOnlyList<PackageUsageDto> UnusedPackages);
-```
-
-扫描规则：
-
-- XAML 控件识别基于 namespace 和 element name。
-- C# 使用识别基于 syntax tree 中的 object creation、generic name 和 static member。
-- Gallery 风格示例中的控件也按普通 XAML 处理。
-- `--include-locations` 输出 file、line、column。
-
-## lint
-
-DTO：
-
-```csharp
-public sealed record LintCommandPayload(
-    ProjectSummaryDto Project,
-    DiagnosticSummaryDto Summary,
-    IReadOnlyList<ProjectDiagnosticDto> Findings,
-    FixPlanDto? FixPlan);
-```
-
-lint 和 doctor 区别：
-
-- `doctor` 面向项目能否正常工作。
-- `lint` 面向可维护性、废弃 API、样式定制风险和最佳实践。
-- `lint` 只输出 fix plan，不写文件。
-
-## migrate
-
-DTO：
-
-```csharp
-public sealed record MigrateCommandPayload(
-    string From,
-    string To,
-    IReadOnlyList<MigrationStepDto> Steps,
-    IReadOnlyList<string> VerificationCommands,
-    IReadOnlyList<string> AgentPrompts);
-```
-
-迁移数据来源：
-
-- metadata changelog。
-- migration guides。
-- 快照 API diff。
-- 可选项目实际使用统计。
-
-如果传入项目路径，迁移计划只保留与项目包和控件使用相关的步骤。
-
-## 错误处理
-
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](error-code-standard.md)。下表只列项目分析类命令可能返回的错误码子集；诊断 finding 的退出码由 severity 聚合。
-
-| 场景 | 错误码 |
+| 输入 | 行为 |
 | --- | --- |
-| path 不存在 | `ATOMUICLI_PRJ001` |
-| XML 读取失败 | `ATOMUICLI_PRJ002` |
-| 源码读取失败 | `ATOMUICLI_PRJ003` |
-| 诊断 error | 按注册表选择具体 finding code，例如 `ATOMUICLI_PKG003`、`ATOMUICLI_AOT001`、`ATOMUICLI_PRJ010` |
-| 版本范围非法 | `ATOMUICLI_ARG002` |
-| 版本索引缺失 | `ATOMUICLI_DATA004` |
+| 目录 | 优先 `.slnx`，其次 `.sln`，最后单个 `.csproj`。 |
+| `.slnx` / `.sln` | 读取项目路径，不执行 MSBuild。 |
+| `.csproj` | 作为单项目分析。 |
+| 不存在路径 | `ATOMUICLI_PRJ001`，退出码 `4`。 |
+| XML 非法 | `ATOMUICLI_PRJ002`，退出码 `4`。 |
 
-## AOT-first 要求
+## 项目模型 DTO
+
+```csharp
+public sealed record ProjectDescriptor(
+    string ProjectPath,
+    string? TargetFramework,
+    IReadOnlyList<string> TargetFrameworks,
+    IReadOnlyList<PackageReferenceDto> PackageReferences,
+    IReadOnlyList<string> SourceFiles,
+    IReadOnlyList<string> XamlFiles);
+
+public sealed record PackageReferenceSet(
+    IReadOnlyList<PackageReferenceDto> DirectReferences,
+    IReadOnlyList<PackageVersionDto> CentralVersions,
+    IReadOnlyList<PackageLockDto> LockEntries);
+
+public sealed record ControlUsage(
+    string ControlName,
+    string SourceFile,
+    int Line,
+    int Column,
+    string UsageKind,
+    string? ProductId);
+
+public sealed record RegistrationUsage(
+    string MethodName,
+    string SourceFile,
+    int Line,
+    string BuilderExpression);
+```
+
+所有 DTO 必须使用相对路径输出，除非用户输入的是绝对路径且命令声明输出绝对路径。
+
+## 诊断规则贡献
+
+诊断规则必须通过 diagnostic contribution catalog 注册。
+
+```csharp
+public sealed record DiagnosticRuleDescriptor(
+    string RuleId,
+    string Category,
+    AtomUICliSeverity DefaultSeverity,
+    IReadOnlySet<string> ApplicableCommands,
+    IReadOnlySet<string> RequiredIndexes,
+    string RelatedErrorCode);
+```
+
+规则执行结果：
+
+```csharp
+public sealed record ProjectDiagnosticDto(
+    string Code,
+    AtomUICliSeverity Severity,
+    string Message,
+    string? Project,
+    string? File,
+    int? Line,
+    int? Column,
+    string? SuggestedFix,
+    IReadOnlyList<string> RelatedSymbols);
+```
+
+## 共享规则
+
+| 规则 | 输入 | 输出 |
+| --- | --- | --- |
+| PackageCompatibilityRule | target framework、package version、metadata version | 兼容性 error/warning。 |
+| PackageConflictRule | package set、product catalog conflict | 包冲突和替代建议。 |
+| RegistrationRule | package references、registration usages | 缺失或重复注册。 |
+| XamlNamespaceRule | XAML namespace、control usage、metadata | 命名空间错误和未知控件。 |
+| AotReadinessRule | publish options、source scan | trimming/AOT 风险。 |
+| DeprecatedApiRule | usage index、metadata deprecated 信息 | 废弃 API。 |
+| GeneratedFileRule | source file path | generated file 修改风险。 |
+
+## 扫描边界
+
+- XAML 使用 XML reader 或轻量 parser，保留 line/column。
+- C# 优先使用 Roslyn syntax tree；不能使用 MSBuild workspace。
+- 不执行用户代码。
+- 不读取 `bin/`、`obj/`、`output/`、`.git/`、`.vs/`、`.idea/`。
+- 扫描失败单文件产生 warning，不阻断其他文件，除非项目文件本身不可读。
+
+## 退出码聚合
+
+| 场景 | 退出码 |
+| --- | --- |
+| 读取成功且无失败诊断 | `0` |
+| 项目或源码不可读取 | `4` |
+| 存在 error 级诊断 | `5` |
+| `--fail-on-warning` 且存在 warning | `5` |
+| 参数错误 | `2` |
+
+## AOT-first 约束
 
 - 不使用 MSBuild workspace。
-- 不加载用户项目程序集。
-- Roslyn 只用于 syntax tree。
+- 不加载用户项目输出程序集。
 - 诊断规则显式注册。
-- JSON DTO 纳入 source generated context。
+- 输出 DTO 纳入 source generated JSON context。
+- 文件扫描器不能依赖动态代码生成。
 
-## 测试矩阵
+## 共享测试基线
 
-| 命令 | 必测场景 |
-| --- | --- |
-| `env` | `.slnx`、Central Package Management、AOT 属性。 |
-| `doctor` | 包冲突、注册缺失、AOT error、rule filter。 |
-| `usage` | XAML/C# 控件识别、group-by、locations。 |
-| `lint` | category filter、fix plan、只读保证。 |
-| `migrate` | from/to 解析、diff、项目相关裁剪。 |
+每个项目分析命令至少覆盖：
+
+- 目录、`.slnx`、`.sln`、`.csproj` 输入。
+- 不存在路径。
+- XML 非法。
+- Central Package Management。
+- XAML line/column。
+- C# 注册链扫描。
+- `--format json` schema。
+- cancellation 传播。

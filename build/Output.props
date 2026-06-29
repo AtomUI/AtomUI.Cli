@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <AtomUICliOutputRoot Condition="'$(AtomUICliOutputRoot)' == ''">$(MSBuildThisFileDirectory)../output/</AtomUICliOutputRoot>
+    <BaseOutputPath Condition="'$(BaseOutputPath)' == ''">$(AtomUICliOutputRoot)bin/$(MSBuildProjectName)/</BaseOutputPath>
+    <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)' == ''">$(AtomUICliOutputRoot)obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(AtomUICliOutputRoot)Nuget/$(Configuration)/</PackageOutputPath>
+    <PublishDir Condition="'$(PublishDir)' == ''">$(AtomUICliOutputRoot)publish/$(MSBuildProjectName)/$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)/</PublishDir>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath Condition="'$(RuntimeIdentifier)' != ''">true</AppendRuntimeIdentifierToOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)/bin/**;$(MSBuildProjectDirectory)/obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

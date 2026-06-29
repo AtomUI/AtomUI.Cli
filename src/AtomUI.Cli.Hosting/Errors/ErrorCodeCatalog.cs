@@ -53,9 +53,9 @@ public sealed class ErrorCodeCatalog : IErrorCodeCatalog
             Error(AtomUICliErrorCodes.ModuleContributionConflict, "MOD", 1, "Module contribution catalog conflict."),
             Error(AtomUICliErrorCodes.DataUnavailable, "DATA", 4, "Metadata or data block is unavailable."),
             Error(AtomUICliErrorCodes.DataSchemaIncompatible, "DATA", 4, "Built-in metadata schema is incompatible."),
-            Error(AtomUICliErrorCodes.ExternalDataSchemaIncompatible, "DATA", 4, "External data schema is incompatible."),
-            Error(AtomUICliErrorCodes.DataVersionIndexMissing, "DATA", 4, "Version index is missing or cannot resolve the target version."),
-            Error(AtomUICliErrorCodes.DataUnauthorized, "DATA", 4, "External or commercial data authorization failed."),
+            Error(AtomUICliErrorCodes.DataReferenceMissing, "DATA", 4, "Metadata internal reference is missing."),
+            Error(AtomUICliErrorCodes.DataExternalUnavailable, "DATA", 4, "External or commercial data root is unavailable."),
+            Error(AtomUICliErrorCodes.DataVersionUnresolved, "DATA", 4, "Data root, product, target version, or version range cannot be resolved."),
             Error(AtomUICliErrorCodes.ControlNotFound, "CTRL", 3, "Control was not found."),
             Error(AtomUICliErrorCodes.ControlAmbiguous, "CTRL", 3, "Control name is ambiguous."),
             Error(AtomUICliErrorCodes.DemoNotFound, "CTRL", 3, "Demo was not found."),
@@ -64,7 +64,7 @@ public sealed class ErrorCodeCatalog : IErrorCodeCatalog
             Error(AtomUICliErrorCodes.PackageNotFound, "PKG", 3, "Package or product was not found."),
             Error(AtomUICliErrorCodes.PackageAmbiguous, "PKG", 3, "Package or product id is ambiguous."),
             ErrorOrDiagnostic(AtomUICliErrorCodes.PackageConflict, "PKG", 5, "Package conflict or compatibility failure."),
-            Error(AtomUICliErrorCodes.ProjectNotFound, "PRJ", 3, "Project, solution, or path was not found."),
+            Error(AtomUICliErrorCodes.ProjectNotFound, "PRJ", 4, "Project, solution, or path was not found."),
             Error(AtomUICliErrorCodes.ProjectFileReadFailed, "PRJ", 4, "Project file cannot be read or parsed."),
             Error(AtomUICliErrorCodes.ProjectSourceReadFailed, "PRJ", 4, "Source file cannot be read or scanned."),
             Diagnostic(AtomUICliErrorCodes.ProjectLintFinding, "PRJ", "Project or XAML lint finding."),
@@ -72,8 +72,9 @@ public sealed class ErrorCodeCatalog : IErrorCodeCatalog
             Error(AtomUICliErrorCodes.McpRequestInvalid, "MCP", 1, "MCP request is invalid."),
             Error(AtomUICliErrorCodes.McpToolNotFound, "MCP", 1, "MCP tool was not found."),
             Error(AtomUICliErrorCodes.McpToolInvocationFailed, "MCP", 1, "MCP tool invocation failed."),
-            Error(AtomUICliErrorCodes.SetupConfigReadFailed, "SETUP", 6, "Configuration read or parse failed."),
+            Error(AtomUICliErrorCodes.SetupTargetProbeFailed, "SETUP", 6, "Target configuration probe failed."),
             Error(AtomUICliErrorCodes.SetupConflict, "SETUP", 6, "Write plan has a blocking conflict."),
+            Error(AtomUICliErrorCodes.SetupConfigReadFailed, "SETUP", 6, "Configuration read or parse failed."),
             Error(AtomUICliErrorCodes.SetupWriteFailed, "SETUP", 6, "Write, update, rollback, or verification failed.")
         ];
     }

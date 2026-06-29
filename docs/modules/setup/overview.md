@@ -68,3 +68,10 @@ public sealed partial class AtomUICliSetupModule : AtomUICliModule
 - 已存在配置的合并策略。
 - 包冲突时阻止写入。
 - JSON 输出包含写入计划和结果。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [模块设计索引](../overview.md)
+- [整体架构设计](../../architecture/atomui-cli-architecture-design.md)
+- [集成与写入命令共享设计](../../commands/integration-write-design.md)

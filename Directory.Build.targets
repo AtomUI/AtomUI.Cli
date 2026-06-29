@@ -1,0 +1,15 @@
+<Project>
+  <ItemGroup>
+    <None Remove="*.csproj.DotSettings" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="AtomUICliVersion" Value="$(AtomUICliVersion)" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(_IsPacking)' == 'true'">
+    <!-- Keep tool packing stable when project references are resolved under the SDK pack targets. -->
+    <BuildInParallel>false</BuildInParallel>
+    <_GlobalPropertiesToRemoveFromProjectReferences>$(_GlobalPropertiesToRemoveFromProjectReferences);_IsPacking</_GlobalPropertiesToRemoveFromProjectReferences>
+  </PropertyGroup>
+</Project>

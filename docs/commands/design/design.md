@@ -1,79 +1,122 @@
 # dotnet atomui design.md 详细设计
 
-## 目标
+## 1. 命令定位
 
-`design.md` 输出 AtomUI 设计语言文档。文档按 major version 组织，用于 Agent 理解视觉原则、Token、布局、可访问性和控件选择。
+`design.md` 输出 AtomUI 设计语言、Token 使用规则、组件设计原则和 Agent 编码约束。它用于让 Agent 在生成 UI 代码前获得稳定设计上下文。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui design.md
+dotnet atomui design.md --section tokens
+dotnet atomui design.md --product desktop --format markdown
+dotnet atomui design.md --audience agent --format json
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `--section` | enum | all | 非法返回 `ATOMUICLI_ARG002` | `all`、`principles`、`layout`、`tokens`、`accessibility`、`patterns`、`controls`。 |
+| `--product` | global string | all visible | 未知返回 `ATOMUICLI_PKG001` | 产品相关设计建议过滤。 |
+| `--target-version` | global version | 默认 metadata 版本 | 版本无法解析返回 `ATOMUICLI_DATA005` | 查询版本。 |
+| `--audience` | enum | developer | 非法返回 `ATOMUICLI_ARG002` | `developer`、`agent`。 |
+
+## 5. Options 类型
 
 ```csharp
-public sealed record DesignMarkdownCommandOptions(
+public sealed record DesignCommandOptions(
     GlobalCliOptions Global,
-    DesignDocumentSection Section) : IAtomUICliCommandOptions;
+    DesignDocumentSection Section,
+    DesignDocumentAudience Audience) : IAtomUICliCommandOptions;
+```
 
-public enum DesignDocumentSection
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IDesignDocumentQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 解析 section 和 audience。
+2. 创建 metadata 上下文。
+3. 查询设计文档。
+4. 应用 section/audience 过滤。
+5. 构建 payload。
+6. markdown/text 输出文档正文，json 输出结构化文档。
+
+## 8. 领域服务契约
+
+```csharp
+public interface IDesignDocumentQueryService
 {
-    All,
-    Principles,
-    Layout,
-    Tokens,
-    Accessibility,
-    Patterns,
-    Controls
+    ValueTask<DesignDocumentQueryResult> QueryAsync(
+        DesignDocumentQuery query,
+        CancellationToken cancellationToken);
 }
 ```
 
-## Payload
+分支：`Found`、`SectionNotFound`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
-public sealed record DesignMarkdownCommandPayload(
+public sealed record DesignCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    IReadOnlyList<DocumentSectionDto> Sections,
-    IReadOnlyList<TokenDto> ReferencedTokens);
+    DesignDocumentSection Section,
+    DesignDocumentAudience Audience,
+    string Markdown,
+    IReadOnlyList<string> RelatedCommands,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+## 10. 输出格式
 
-依赖：
+- text/markdown：输出 markdown 正文。
+- json：输出 payload。
 
-- `ITargetVersionResolver`
-- `IDesignDocumentQueryService`
-- `ITokenQueryService`
-- `IProductCatalogLoader`
-- `IOutputWriter`
+## 11. 错误与退出码
 
-执行步骤：
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_ARG002` | section/audience 非法 | `2` |
+| `ATOMUICLI_PKG001` | product 不存在 | `3` |
+| `ATOMUICLI_DATA003` | section 数据引用不存在 | `4` |
+| `ATOMUICLI_DATA001` | 设计文档数据不可用 | `4` |
+| `ATOMUICLI_DATA005` | target version 无法解析 | `4` |
 
-1. 解析目标 major version。
-2. 校验 section。
-3. 读取设计文档 section。
-4. 按 `--product` 裁剪控件选择建议。
-5. 附加相关 global/shared token。
-6. 输出 markdown、json 或 text。
+## 12. AOT-first 约束
 
-## 输出规则
+设计文档来自 metadata snapshot 或嵌入数据，不扫描 docs 目录。DTO 纳入 JSON context。
 
-- 默认格式为 `markdown`。
-- markdown 保留设计文档标题层级。
-- JSON 输出 section 和 token 引用，便于 Agent 局部加载。
+## 13. 测试矩阵
 
-## 错误
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| default | `design.md` | 完整 markdown。 |
+| section | `--section tokens` | Token section。 |
+| agent | `--audience agent` | Agent 约束内容。 |
+| invalid | `--section bad` | `ATOMUICLI_ARG002`。 |
+| json | `--format json` | Markdown 字段存在。 |
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+## 14. 实现文件建议
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG002` | section 非法。 |
-| `ATOMUICLI_PKG001` | product 不存在。 |
-| `ATOMUICLI_DATA001` | 设计文档缺失。 |
-
-## 测试
-
-- 默认输出所有 section。
-- `--section tokens` 只输出 Token 相关内容。
-- 目标版本映射到正确 major 文档。
-- product filter 影响控件选择 section。
-- markdown heading 顺序稳定。
-
+- `src/AtomUI.Cli.Metadata/Commands/DesignCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/DesignCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/DesignDocumentQueryService.cs`

@@ -55,7 +55,7 @@ flowchart LR
     Setup --> Project
 ```
 
-AtomUI Cli 运行时围绕一个应用编排器展开。应用编排器负责创建模块宿主和 GenericHost，收集模块贡献的命令、MCP tools、数据根和诊断规则，然后根据用户输入执行一次命令或启动 MCP 长驻服务。
+AtomUI Cli 运行时围绕一个应用编排器展开。应用编排器负责读取轻量命令 manifest，预解析用户输入，计算本次运行需要激活的模块集合，然后创建模块宿主和 GenericHost，收集 active modules 贡献的命令、MCP tools、数据根和诊断规则，最后执行一次命令或启动 MCP 长驻服务。
 
 ## 6. 功能模块总览
 
@@ -79,8 +79,11 @@ Core Runtime 是 CLI 的应用底座，负责把命令行进程组织成一个�
 | 对象 | 职责 |
 | --- | --- |
 | `Program.Main` | 只负责创建 `AtomUICliApplication` 并返回退出码。 |
-| `AtomUICliApplication` | 应用编排器，拥有 `ModuleHost`、`IHost`、冻结后的 command catalog、MCP tool catalog 和诊断规则 catalog。 |
-| `AtomUICliApplicationBuilder` | 组合启动参数、Host 配置、模块 registration、模块启用选项和数据根选项。 |
+| `AtomUICliApplication` | 应用编排器，拥有 `CommandManifestCatalog`、`ModuleActivationPlan`、`ModuleHost`、`IHost`、冻结后的 command catalog、MCP tool catalog 和诊断规则 catalog。 |
+| `AtomUICliApplicationBuilder` | 组合启动参数、Host 配置、模块 registration、命令 manifest、模块启用选项和数据根选项。 |
+| `CommandPreParser` | 在模块生命周期前识别命令名、help/version shortcut 和可预校验的全局选项。 |
+| `CommandManifestCatalog` | 保存所有命令的轻量 manifest，包括所属模块和命令级 required modules，不创建模块、不注册服务、不加载数据。 |
+| `ModuleActivationPlanner` | 根据命令所属模块、命令级 required modules 和硬模块依赖计算 active modules。 |
 | `CliCommandDescriptorCatalog` | 保存所有显式注册的命令描述，不扫描程序集。 |
 | `CliCommandDispatcher` | 为每次命令执行创建 DI scope，解析 handler，写出结果并映射退出码。 |
 | `IOutputWriter` / `IErrorWriter` | 分离 stdout 与 stderr，并支持 text、json、markdown 输出。 |
@@ -97,7 +100,7 @@ Core Runtime 只承载通用运行时能力，不持有控件知识、项目扫�
 | 角色 | 生命周期职责 |
 | --- | --- |
 | `Program.Main` | 只负责创建 `AtomUICliApplication`、调用 `RunAsync`、返回退出码。它不直接解析模块、不创建业务服务、不调度命令。 |
-| `AtomUICliApplicationBuilder` | 收集启动参数、模块 registration、启用模块集合、Host 配置和额外服务注册。Builder 不启动模块。 |
+| `AtomUICliApplicationBuilder` | 收集启动参数、模块 registration、命令 manifest、activation plan 输入、Host 配置和额外服务注册。Builder 不启动模块。 |
 | `AtomUICliApplication` | 生命周期总控。创建 `ModuleHost`，执行模块通用钩子和 CLI 专属钩子，构建 GenericHost，启动命令或 MCP server，并负责停止和释放。 |
 | `ModuleHost` | 负责模块拓扑、模块实例创建、服务描述收集、服务冻结、模块初始化和模块关闭。 |
 | `IHost` | 负责应用级 DI provider、配置、日志、host lifetime、取消信号和 hosted service 生命周期。 |
@@ -111,18 +114,20 @@ Core Runtime 只承载通用运行时能力，不持有控件知识、项目扫�
 
 ```text
 Created
-  -> ModulesResolving
-  -> ModulesCreating
-  -> ModuleServicesConfiguring
-  -> ModuleServicesFrozen
-  -> CliContributionsConfiguring
-  -> CliCatalogsFrozen
+  -> CommandPreParsing
+  -> ModuleActivationPlanning
+  -> ActiveModulesResolving
+  -> ActiveModulesCreating
+  -> ActiveModuleServicesConfiguring
+  -> ActiveModuleServicesFrozen
+  -> ActiveCliContributionsConfiguring
+  -> ActiveCliCatalogsFrozen
   -> HostBuilding
-  -> ModulesInitializing
+  -> ActiveModulesInitializing
   -> HostStarting
   -> RunningCommand / RunningMcpServer
   -> HostStopping
-  -> ModulesShuttingDown
+  -> ActiveModulesShuttingDown
   -> Disposed
 ```
 
@@ -131,19 +136,21 @@ Created
 | 状态 | 入口条件 | 主要动作 | 失败处理 |
 | --- | --- | --- | --- |
 | `Created` | Builder 构建完成 | 保存 args、模块 registration 和 Host 配置 | 无业务动作。 |
-| `ModulesResolving` | 开始运行 | 解析启用模块、依赖闭包和拓扑顺序 | 返回模块解析错误。 |
-| `ModulesCreating` | 模块拓扑有效 | 创建模块实例 | 返回模块创建错误。 |
-| `ModuleServicesConfiguring` | 模块实例有效 | 执行 `PreConfigureServices`、`ConfigureServices`、`PostConfigureServices` | 返回模块服务配置错误。 |
-| `ModuleServicesFrozen` | 服务配置成功 | 冻结模块服务描述，禁止继续修改 | 返回服务冻结错误。 |
-| `CliContributionsConfiguring` | 模块服务已冻结 | 收集数据根、命令、MCP tool、诊断规则等 CLI 专属贡献 | 返回 contribution 错误。 |
-| `CliCatalogsFrozen` | contribution 收集成功 | 构建不可变 catalog，检查重复项和冲突 | 返回 catalog 错误。 |
+| `CommandPreParsing` | 开始运行 | 读取 `CommandManifestCatalog`，解析命令名、help/version shortcut 和可预校验全局选项 | 返回参数错误，不创建模块。 |
+| `ModuleActivationPlanning` | 命令 manifest 命中 | 计算 Core、命令所属模块、命令级 required modules 和硬依赖闭包 | 返回模块解析错误。 |
+| `ActiveModulesResolving` | activation plan 有效 | 解析 active modules、依赖闭包和拓扑顺序 | 返回模块解析错误。 |
+| `ActiveModulesCreating` | active module 拓扑有效 | 只创建 active module 实例 | 返回模块创建错误。 |
+| `ActiveModuleServicesConfiguring` | active module 实例有效 | 执行 active modules 的 `PreConfigureServices`、`ConfigureServices`、`PostConfigureServices` | 返回模块服务配置错误。 |
+| `ActiveModuleServicesFrozen` | 服务配置成功 | 冻结 active module 服务描述，禁止继续修改 | 返回服务冻结错误。 |
+| `ActiveCliContributionsConfiguring` | active module 服务已冻结 | 收集 active modules 的数据根、命令、MCP tool、诊断规则等 CLI 专属贡献 | 返回 contribution 错误。 |
+| `ActiveCliCatalogsFrozen` | contribution 收集成功 | 构建本次运行的不可变 catalog，检查重复项和冲突 | 返回 catalog 错误。 |
 | `HostBuilding` | catalog 已冻结 | 把模块服务描述映射到 `IServiceCollection`，注册冻结 catalog，构建 `IHost` | 返回 Host 构建错误。 |
-| `ModulesInitializing` | Host build 成功 | 调用模块初始化钩子 | 停止启动，进入关闭流程。 |
+| `ActiveModulesInitializing` | Host build 成功 | 调用 active modules 初始化钩子 | 停止启动，进入关闭流程。 |
 | `HostStarting` | 模块初始化成功 | 启动 GenericHost | 停止启动，进入关闭流程。 |
 | `RunningCommand` | 普通命令入口 | 创建 command scope，解析 handler，执行命令 | 映射为命令结果和退出码。 |
 | `RunningMcpServer` | `mcp` 入口 | 启动 stdio server，每次 tool 调用创建 scope | transport 或 tool 错误映射到 MCP 错误码。 |
 | `HostStopping` | 命令结束、MCP 退出、失败或取消 | 停止 Host，释放 hosted services | 不吞掉原始结果，但记录停止错误。 |
-| `ModulesShuttingDown` | Host 已停止或未成功启动 | 按反向拓扑顺序关闭模块 | 返回或记录模块关闭错误。 |
+| `ActiveModulesShuttingDown` | Host 已停止或未成功启动 | 按反向拓扑顺序关闭 active modules | 返回或记录模块关闭错误。 |
 | `Disposed` | 资源释放完成 | 清空 Host 和 ModuleHost 引用 | 后续调用必须失败或 no-op。 |
 
 ### 8.3 钩子调用顺序
@@ -151,42 +158,82 @@ Created
 模块通用钩子和 CLI 专属钩子必须由 `AtomUICliApplication` 统一调用：
 
 ```text
-Load generated ModuleRegistration catalog
+Load generated CommandManifestCatalog
+  -> CommandPreParser.Parse()
+  -> ModuleActivationPlanner.Plan()
+  -> Load generated ModuleRegistration catalog
   -> Merge explicit ModuleRegistration
-  -> ModuleHost.ResolveModules()
-  -> ModuleHost.CreateModules()
-  -> ModuleHost.PreConfigureServicesAsync()
-  -> ModuleHost.ConfigureServicesAsync()
-  -> ModuleHost.PostConfigureServicesAsync()
-  -> ModuleHost.FreezeServices()
-  -> ConfigureAtomUICliDataRootsAsync()
-  -> ConfigureAtomUICliCommandsAsync()
-  -> ConfigureAtomUICliMcpToolsAsync()
-  -> ConfigureAtomUICliDiagnosticRulesAsync()
-  -> Freeze DataRootCatalog / CommandCatalog / McpToolCatalog / DiagnosticRuleCatalog
+  -> ModuleHost.ResolveModules(activeModules)
+  -> ModuleHost.CreateModules(activeModules)
+  -> ModuleHost.PreConfigureServicesAsync(activeModules)
+  -> ModuleHost.ConfigureServicesAsync(activeModules)
+  -> ModuleHost.PostConfigureServicesAsync(activeModules)
+  -> ModuleHost.FreezeServices(activeModules)
+  -> ConfigureAtomUICliDataRootsAsync(activeModules)
+  -> ConfigureAtomUICliCommandsAsync(activeModules)
+  -> ConfigureAtomUICliMcpToolsAsync(activeModules)
+  -> ConfigureAtomUICliDiagnosticRulesAsync(activeModules)
+  -> Freeze active DataRootCatalog / CommandCatalog / McpToolCatalog / DiagnosticRuleCatalog
   -> Build GenericHost
-  -> ModuleHost.InitializeModulesAsync()
+  -> ModuleHost.InitializeModulesAsync(activeModules)
   -> IHost.StartAsync()
   -> Dispatch command 或 run MCP server
   -> IHost.StopAsync()
-  -> ModuleHost.ShutdownAsync()
+  -> ModuleHost.ShutdownAsync(activeModules)
 ```
 
 当前核心实现已经落地命令 contribution 阶段；数据根、MCP tool 和诊断规则阶段是同一生命周期模型下的扩展阶段，不能通过独立扫描或局部初始化绕开 Application。
 
 ### 8.4 GenericHost 与 ModuleHost 的顺序关系
 
-AtomUI Cli 采用“先模块描述，后 Host 实例”的启动顺序：
+AtomUI Cli 采用“先命令预解析，再模块描述，后 Host 实例”的启动顺序：
 
-1. `ModuleHost` 先完成模块拓扑、模块实例创建和模块服务描述收集。
-2. 模块服务描述冻结后，CLI 专属 contribution 阶段收集所有 catalog。
-3. 冻结 catalog 后，`AtomUICliApplication` 将模块服务描述映射到 `IServiceCollection`。
-4. `IHost` build 后，模块才能进入初始化阶段。
-5. `IHost.StartAsync()` 只在模块初始化成功后执行。
+1. `CommandPreParser` 先从轻量 manifest 识别目标命令。
+2. `ModuleActivationPlanner` 计算 Core、命令所属模块、命令级 required modules 和硬依赖模块。
+3. `ModuleHost` 只对 active modules 完成拓扑、模块实例创建和模块服务描述收集。
+4. active module 服务描述冻结后，CLI 专属 contribution 阶段收集本次运行需要的 catalog。
+5. 冻结 catalog 后，`AtomUICliApplication` 将 active module 服务描述映射到 `IServiceCollection`。
+6. `IHost` build 后，active modules 才能进入初始化阶段。
+7. `IHost.StartAsync()` 只在 active modules 初始化成功后执行。
 
-这样设计的原因是命令目录、MCP tool 目录、诊断规则目录和数据根目录必须在应用开始处理请求前成为不可变输入。Host provider 不负责发现模块能力，它只承载已经确定的能力。
+这样设计的原因是命令目录、MCP tool 目录、诊断规则目录和数据根目录必须在应用开始处理请求前成为不可变输入，但不应为了执行一个命令加载所有模块。Host provider 不负责发现模块能力，它只承载 activation plan 已确定的能力。
 
-### 8.5 Scope 与取消传播
+### 8.5 命令预解析与按需模块激活
+
+命令预解析发生在 `ModuleHost` 创建模块实例之前。它只读取 `CommandManifestCatalog`，不执行模块钩子，不创建业务 options，不读取用户项目或数据根。
+
+```text
+Raw args
+  -> CommandPreParser
+  -> CommandManifestCatalog
+  -> ModuleActivationPlanner
+  -> ModuleActivationPlan
+```
+
+`CommandManifestCatalog` 是轻量事实来源，包含命令名、所属模块、命令级 required modules、分组、支持格式、读写属性和项目要求。它必须来自显式代码或 source generator，不能通过运行时扫描模块得到。
+
+激活规则固定为：
+
+```text
+active modules = Core + command owner module + command required modules + hard dependency closure
+```
+
+示例：
+
+| 命令 | active modules |
+| --- | --- |
+| `version` | Core |
+| `info Button` | Core、Metadata |
+| `doctor ./App` | Core、Project Analysis、Metadata |
+| `setup` | Core、Setup |
+| `add datagrid` | Core、Setup、Metadata |
+| `mcp` | Core、MCP |
+
+`help` 不应为了列出所有命令激活全部模块；默认帮助从 manifest 输出。`help <command>` 需要详细命令帮助时，只激活目标命令所属模块、命令级 required modules 和硬依赖模块。
+
+MCP 是特殊模式：`mcp` 进程启动时只激活 Core 和 MCP。`tools/list` 读取 tool manifest；`tools/call` 再根据 tool 所属模块创建 invocation activation plan，按需激活 Metadata、Project Analysis、Setup 或商业数据能力。
+
+### 8.6 Scope 与取消传播
 
 命令和 MCP 的 scope 规则不同：
 
@@ -197,7 +244,7 @@ AtomUI Cli 采用“先模块描述，后 Host 实例”的启动顺序：
 
 取消信号来自 Ctrl+C、Host lifetime、命令参数处理和 MCP request context。`CancellationToken` 必须向模块初始化、命令 handler、项目扫描、元数据读取和 MCP tool handler 传递。取消发生后，Application 仍然必须执行 Host stop 和模块 shutdown。
 
-### 8.6 生命周期失败边界
+### 8.7 生命周期失败边界
 
 生命周期失败必须在最早边界被转换为结构化错误：
 
@@ -242,10 +289,8 @@ flowchart TD
 
     Metadata --> Core
     Project --> Metadata
-    Mcp --> Metadata
-    Mcp --> Project
-    Setup --> Metadata
-    Setup --> Project
+    Mcp --> Core
+    Setup --> Core
     Commercial --> Metadata
 ```
 
@@ -254,8 +299,8 @@ flowchart TD
 - Core Runtime 是所有功能模块的基础依赖。
 - Metadata & Knowledge 是知识查询、项目诊断、MCP 和商业数据的公共知识源。
 - Project Analysis 可以依赖 Metadata 的产品和包规则，但 Metadata 不能反向依赖 Project Analysis。
-- MCP Integration 只做 transport 和 tool adapter，复用 Metadata 与 Project Analysis 服务。
-- Setup & Write Workflows 依赖 Metadata 和 Project Analysis 生成写入计划。
+- MCP Integration 只做 transport 和 tool adapter；具体 tool invocation 通过 tool manifest 声明 required modules。
+- Setup & Write Workflows 只硬依赖 Core；`add`、`upgrade`、`init` 等命令通过 command manifest 声明 Metadata 或 Project Analysis required modules。
 - Commercial Data 扩展 Metadata 的数据根和可见性规则，不要求其他模块反向依赖商业模块。
 
 模块依赖必须用强类型声明，例如 `typeof(AtomUICliMetadataModule)`。禁止用手写字符串表达依赖关系。
@@ -306,11 +351,18 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 | `AotReadinessRule` | Diagnostic Rule Contribution | 诊断规则来自多个模块，需要统一排序和输出。 |
 | 商业数据根 provider | Data Root Contribution | 数据根可由内置包、外部路径和商业模块共同贡献。 |
 
-禁止把多贡献能力塞进普通 DI collection 后再枚举 `IEnumerable<T>` 当作能力发现机制。所有公开能力必须先进入 contribution context，再由 Application 构建不可变 catalog。
+禁止把多贡献能力塞进普通 DI collection 后再枚举 `IEnumerable<T>` 当作能力发现机制。所有公开能力必须先进入 manifest 或 contribution context，再由 Application 构建不可变 catalog。
 
 ### 9.5 CLI 专属贡献阶段
 
-CLI 专属贡献阶段在模块服务冻结之后、Host build 之前执行：
+CLI 能力分成 manifest 和 descriptor 两层：
+
+| 层 | 生命周期位置 | 职责 |
+| --- | --- | --- |
+| Manifest | 模块实例创建之前 | 提供命令、MCP tool、诊断规则的轻量索引，用于预解析、帮助输出和模块激活计划。 |
+| Descriptor | active module 服务冻结之后、Host build 之前 | 提供 options factory、handler 类型、参数 schema、rule 实现等执行所需元数据。 |
+
+CLI 专属 descriptor 贡献阶段只对 active modules 执行：
 
 | 阶段 | 输入 | 输出 catalog | 主要校验 |
 | --- | --- | --- | --- |
@@ -319,7 +371,7 @@ CLI 专属贡献阶段在模块服务冻结之后、Host build 之前执行：
 | MCP Tool Contribution | 模块声明的 MCP tool descriptor | `McpToolDescriptorCatalog` | tool 名唯一、参数 schema 明确、只读/写入权限明确。 |
 | Diagnostic Rule Contribution | 模块声明的诊断规则 descriptor | `DiagnosticRuleCatalog` | rule code 唯一、severity 合法、适用命令和项目范围明确。 |
 
-冻结后的 catalog 是运行时事实来源。命令帮助、命令调度、MCP tool list、项目诊断规则运行和输出 schema 都必须读取这些 catalog。
+冻结后的 descriptor catalog 是当前 invocation 的执行事实来源。命令帮助、未知命令建议和模块激活可以读取 manifest；命令调度、MCP tool invocation、项目诊断规则运行和输出 schema 必须读取 active descriptor catalog。
 
 ### 9.6 模块生命周期钩子
 
@@ -496,12 +548,14 @@ Catalog 是公开能力的事实来源，DI 是对象创建机制。两者不能
 
 | 能力 | 事实来源 | DI 负责 |
 | --- | --- | --- |
-| 命令列表和命令元数据 | `CliCommandDescriptorCatalog` | 根据 descriptor 中的 handler 类型解析 handler。 |
-| MCP tool 列表和参数 schema | `McpToolDescriptorCatalog` | 解析 tool handler 或领域服务。 |
-| 诊断规则列表和 rule metadata | `DiagnosticRuleCatalog` | 解析 rule 实现或 rule runner。 |
-| 数据根 provider 列表 | `DataRootProviderCatalog` | 解析 provider 依赖的 reader、loader、auth checker。 |
+| 全局命令列表、所属模块和帮助摘要 | `CommandManifestCatalog` | 不参与对象解析。 |
+| 当前命令的执行 descriptor | active `CliCommandDescriptorCatalog` | 根据 descriptor 中的 handler 类型解析 handler。 |
+| 全局 MCP tool 列表和所属模块 | `McpToolManifestCatalog` 或 `CommandManifestCatalog` 派生索引 | 不参与对象解析。 |
+| 当前 MCP invocation 的 tool descriptor | active `McpToolDescriptorCatalog` | 解析 tool handler 或领域服务。 |
+| 当前诊断 invocation 的 rule metadata | active `DiagnosticRuleCatalog` | 解析 rule 实现或 rule runner。 |
+| 当前 invocation 的数据根 provider 列表 | active `DataRootProviderCatalog` | 解析 provider 依赖的 reader、loader、auth checker。 |
 
-这样设计可以保证帮助输出、MCP tool list、错误检查、权限判断和 AOT 分析都基于不可变 catalog，而不是依赖 DI 容器里的运行时枚举结果。
+这样设计可以保证帮助输出、MCP tool list、错误检查、权限判断和 AOT 分析都基于不可变 manifest 或 active catalog，而不是依赖 DI 容器里的运行时枚举结果。
 
 ### 10.8 AOT 与 DI 约束
 
@@ -523,10 +577,10 @@ Host build 阶段应启用容器验证策略：
 
 - 验证 singleton、scoped、transient 的依赖图。
 - 验证 singleton 不依赖 scoped 服务。
-- 验证所有 command descriptor 对应的 handler 可解析。
-- 验证所有 MCP tool descriptor 对应的 handler 或领域服务可解析。
-- 验证所有诊断 rule descriptor 对应实现可解析。
-- 验证写入命令所需的 planner 和 executor 可解析。
+- 验证 active command descriptor 对应的 handler 可解析。
+- 验证 active MCP tool descriptor 对应的 handler 或领域服务可解析。
+- 验证 active 诊断 rule descriptor 对应实现可解析。
+- 验证 active 写入命令所需的 planner 和 executor 可解析。
 
 容器验证失败属于启动阶段错误，不能等到命令执行中才暴露。错误必须映射到模块或系统错误域，并进入统一清理流程。
 
@@ -544,8 +598,12 @@ Host build 阶段应启用容器验证策略：
 
 ```text
 args
+  -> CommandPreParser
+  -> CommandManifestCatalog
+  -> ModuleActivationPlanner
+  -> active ModuleHost lifecycle
   -> CliCommandParser
-  -> CliCommandDescriptorCatalog
+  -> active CliCommandDescriptorCatalog
   -> CliInvocationContext
   -> command IServiceScope
   -> IAtomUICliCommandHandler<TOptions>
@@ -700,7 +758,7 @@ Setup & Write Workflows 模块负责可能修改用户项目或本地工具配�
 | `add` | 包装 AtomUI 生态包添加流程，并根据产品清单提示注册入口。 |
 | `upgrade` | 给出 CLI、AtomUI 包和数据快照升级建议。 |
 
-Setup 模块依赖 Metadata 模块获取产品和包规则，依赖 Project Analysis 模块判断当前项目状态。
+Setup 模块本身只硬依赖 Core。具体写入命令通过 command manifest 声明所需模块：例如 `add` 和 `upgrade` 需要 Metadata 获取产品和包规则，`init` 可以需要 Project Analysis 判断当前项目状态。
 
 ## 17. Commercial Data 模块
 

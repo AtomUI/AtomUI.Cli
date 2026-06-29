@@ -91,6 +91,8 @@ markdown 输出用于文档生成，按分类分组。
 | `ATOMUICLI_ARG002` | `2` | `kind` 非法。 |
 | `ATOMUICLI_DATA001` | `4` | 元数据快照不可用。 |
 | `ATOMUICLI_DATA002` | `4` | schema 版本不兼容。 |
+| `ATOMUICLI_DATA004` | `4` | data-root 不可读或授权失败。 |
+| `ATOMUICLI_DATA005` | `4` | `--target-version` 或 `--since` 版本无法解析到可用快照。 |
 | `ATOMUICLI_PKG001` | `3` | 指定产品不存在。 |
 
 ## AOT 约束
@@ -106,3 +108,11 @@ markdown 输出用于文档生成，按分类分组。
 - `--since` 只返回目标版本范围内的条目。
 - json 输出字段和排序稳定。
 - 快照缺失时返回 `ATOMUICLI_DATA001`。
+- 目标版本不存在时返回 `ATOMUICLI_DATA005`。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

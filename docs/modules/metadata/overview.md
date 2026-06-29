@@ -79,3 +79,10 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 - 控件不存在时返回结构化错误和建议。
 - 商业数据缺失时不能伪造控件 API。
 - JSON 输出快照测试。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [源码提取设计](source-extraction-design.md)
+- [模块设计索引](../overview.md)
+- [整体架构设计](../../architecture/atomui-cli-architecture-design.md)

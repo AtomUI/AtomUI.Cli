@@ -84,7 +84,7 @@ json 输出示例：
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | `--group-by` 非法。 |
 | `ATOMUICLI_CTRL001` | `3` | 指定控件不存在。 |
-| `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
+| `ATOMUICLI_PRJ001` | `4` | 未找到项目。 |
 | `ATOMUICLI_PRJ003` | `4` | 扫描文件读取失败。 |
 
 ## AOT 约束
@@ -101,3 +101,9 @@ json 输出示例：
 - `--include-locations` 输出稳定路径和行号。
 - generated files 被跳过。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [项目分析命令共享设计](../project-analysis-design.md)
+- [错误码标准](../error-code-standard.md)

@@ -105,3 +105,9 @@ json 输出示例：
 - 示例不存在时返回候选示例。
 - markdown 输出 fenced code block 语言标记正确。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

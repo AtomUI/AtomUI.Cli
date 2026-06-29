@@ -90,10 +90,10 @@ json 输出示例：
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG001` | `2` | 缺少 `packageOrProduct`。 |
-| `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
+| `ATOMUICLI_PRJ001` | `4` | 未找到项目。 |
 | `ATOMUICLI_PKG001` | `3` | 包或产品不存在。 |
 | `ATOMUICLI_PKG003` | `5` | 包冲突阻止添加。 |
-| `ATOMUICLI_SETUP003` | `6` | 写入失败。 |
+| `ATOMUICLI_SETUP004` | `6` | 写入失败。 |
 
 ## AOT 约束
 
@@ -109,3 +109,9 @@ json 输出示例：
 - dry-run 不修改文件。
 - `--write` 同时更新包引用和注册入口。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [集成与写入命令共享设计](../integration-write-design.md)
+- [错误码标准](../error-code-standard.md)

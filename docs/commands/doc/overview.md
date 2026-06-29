@@ -103,3 +103,9 @@ json 输出返回结构化文档区块，便于 Agent 自行选择上下文。
 - json 输出能被 source generated context 序列化。
 - 控件不存在时返回候选建议。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

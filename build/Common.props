@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup>
+    <AtomUICliTargetFramework Condition="'$(AtomUICliTargetFramework)' == ''">net10.0</AtomUICliTargetFramework>
+    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">$(AtomUICliTargetFramework)</TargetFramework>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <WarningsAsErrors>Nullable</WarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <TrimMode>copyused</TrimMode>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+
+    <IsTestProject Condition="$(MSBuildProjectFullPath.Contains('test')) and $(MSBuildProjectName.EndsWith('.Tests'))">true</IsTestProject>
+    <IsPackable Condition="'$(MSBuildProjectName)' != 'AtomUI.Cli' and '$(IsTestProject)' != 'true'">false</IsPackable>
+    <IsAotCompatible Condition="'$(IsAotCompatible)' == '' and '$(IsTestProject)' != 'true'">true</IsAotCompatible>
+
+    <GenerateAssemblyConfigurationAttribute>true</GenerateAssemblyConfigurationAttribute>
+    <GenerateAssemblyCompanyAttribute>true</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyProductAttribute>true</GenerateAssemblyProductAttribute>
+  </PropertyGroup>
+</Project>

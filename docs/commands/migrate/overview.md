@@ -87,8 +87,9 @@ json 输出示例：
 | --- | --- | --- |
 | `ATOMUICLI_ARG001` | `2` | 缺少 from 或 to。 |
 | `ATOMUICLI_ARG002` | `2` | 版本参数冲突或方向非法。 |
-| `ATOMUICLI_DATA004` | `4` | 版本索引缺失。 |
-| `ATOMUICLI_PRJ001` | `3` | 指定项目不存在。 |
+| `ATOMUICLI_DATA001` | `4` | migration 数据不可用。 |
+| `ATOMUICLI_DATA005` | `4` | 版本范围无法解析到可用快照。 |
+| `ATOMUICLI_PRJ001` | `4` | 指定项目不存在。 |
 
 ## AOT 约束
 
@@ -104,3 +105,9 @@ json 输出示例：
 - 传入项目路径后只输出项目相关步骤。
 - markdown 输出包含验证命令。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [项目分析命令共享设计](../project-analysis-design.md)
+- [错误码标准](../error-code-standard.md)

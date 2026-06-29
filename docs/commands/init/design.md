@@ -1,10 +1,42 @@
 # dotnet atomui init 详细设计
 
-## 目标
+## 1. 命令定位
 
-`init` 为项目生成 AtomUI 初始化计划，包括包引用、注册入口、XAML namespace 和可选 sample。默认 dry-run，只有 `--write` 修改文件。
+`init` 检查项目是否已具备 AtomUI 基础配置，并生成缺失项的写入计划。默认 dry-run，不修改项目。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliSetupModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | write |
+| 读写 | `isReadOnly=false` |
+| 项目上下文 | `requiresProject=true` |
+| 写入确认 | `requiresWriteConfirmation=true` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui init ./src/App
+dotnet atomui init --product desktop --format json
+dotnet atomui init ./App.csproj --product desktop --add-sample
+dotnet atomui init --product desktop --write
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `path` | path | 当前目录 | 不存在返回 `ATOMUICLI_PRJ001` | 项目入口。 |
+| `--product` | string list | desktop | 未知返回 `ATOMUICLI_PKG001` | 初始化产品，可重复。 |
+| `--add-sample` | bool | false | 无 | 生成最小示例视图或代码片段。 |
+| `--write` | bool | false | 无 | 执行写入。 |
+| `--force` | bool | false | 不能绕过 blocking conflict | 覆盖非阻断差异。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record InitCommandOptions(
@@ -16,63 +48,67 @@ public sealed record InitCommandOptions(
     bool Force) : IAtomUICliCommandOptions;
 ```
 
-## Payload
+## 6. Handler 依赖
 
-```csharp
-public sealed record InitCommandPayload(
-    string SchemaVersion,
-    string Command,
-    bool Write,
-    ProjectSummaryDto Project,
-    IReadOnlyList<SetupActionDto> Actions,
-    IReadOnlyList<SetupConflictDto> Conflicts,
-    IReadOnlyList<string> VerificationCommands);
-```
-
-## Handler
-
-依赖：
-
-- `IProjectPathResolver`
-- `IProjectInitAdvisor`
-- `IPackageAddPlanner`
-- `ISetupWriter`
+- `IProjectAnalysisContextFactory`
+- `IPackageQueryService`
+- `IWritePlanBuilder<InitCommandOptions>`
+- `IWriteExecutor`
 - `IOutputWriter`
 
-执行步骤：
+## 7. 执行流程
 
-1. 定位项目。
-2. 校验产品存在且可初始化。
-3. 读取现有包引用、注册入口和 XAML namespace。
-4. 生成初始化 actions。
-5. 检查冲突。
-6. dry-run 输出计划。
-7. `--write` 时应用计划并输出验证命令。
+1. 读取项目上下文。
+2. 查询 products 所需包、注册入口和可选 sample 模板。
+3. 检查当前项目包引用、注册调用、XAML namespace。
+4. 生成缺失项 write plan。
+5. dry-run 输出或 `--write` 执行。
 
-## 写入边界
+## 8. 领域服务契约
 
-- 只修改 plan 声明的文件。
-- 无法定位注册插入点时返回 conflict。
-- sample 文件只写明确路径。
-- 不执行外部命令。
+```csharp
+public interface IProjectInitPlanBuilder : IWritePlanBuilder<InitCommandOptions>
+{
+}
+```
 
-## 错误
+分支：`AlreadyInitialized`、`PlanCreated`、`ProjectInvalid`、`ProductUnknown`、`Conflict`、`WriteFailed`。
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+## 9. 输出模型
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG002` | product 非法。 |
-| `ATOMUICLI_PRJ001` | 未找到项目。 |
-| `ATOMUICLI_PKG001` | 产品对应包不存在。 |
-| `ATOMUICLI_SETUP002` | 初始化冲突。 |
-| `ATOMUICLI_SETUP003` | 写入失败。 |
+复用 `WritePlan` / `WriteResult`，operation 可包含 package reference、registration call、XAML namespace 和 sample 文件。
 
-## 测试
+## 10. 输出格式
 
-- 已存在包引用不重复添加。
-- 已存在注册入口不重复添加。
-- dry-run 不修改文件。
-- `--write` 只修改 plan 声明文件。
-- 无法安全插入注册入口时失败。
+- text：输出当前状态和缺失项。
+- json：输出完整 plan/result。
 
+## 11. 错误与退出码
+
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_PRJ001` | 项目不存在 | `4` |
+| `ATOMUICLI_PRJ002` | 项目无法读取 | `4` |
+| `ATOMUICLI_PKG001` | product 不存在 | `3` |
+| `ATOMUICLI_SETUP002` | blocking conflict | `6` |
+| `ATOMUICLI_SETUP004` | 写入失败 | `6` |
+
+## 12. AOT-first 约束
+
+不执行 restore/build。不动态修改未知项目结构。write DTO 纳入 JSON context。
+
+## 13. 测试矩阵
+
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| already initialized | 完整项目 | plan 为空，exit `0`。 |
+| missing package | 缺包项目 | package operation。 |
+| missing registration | 缺注册 | C# operation。 |
+| dry-run | 无 `--write` | 文件不变。 |
+| write conflict | 无法定位插入点 | `ATOMUICLI_SETUP002`。 |
+
+## 14. 实现文件建议
+
+- `src/AtomUI.Cli.Hosting/Setup/InitCommandOptions.cs`
+- `src/AtomUI.Cli.Hosting/Setup/InitCommandHandler.cs`
+- `src/AtomUI.Cli.Hosting/Setup/ProjectInitPlanBuilder.cs`

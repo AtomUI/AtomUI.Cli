@@ -1,10 +1,43 @@
 # dotnet atomui package 详细设计
 
-## 目标
+## 1. 命令定位
 
-`package` 查询 AtomUI 生态包、产品归属、依赖、注册方法、替代关系和冲突关系。它是包安装、升级和诊断前的只读依据。
+`package` 查询 AtomUI 产品包、NuGet 包、依赖、冲突、替代关系和注册入口。它用于安装前检查和 Agent 修改包引用前的依赖判断。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui package
+dotnet atomui package AtomUI.Controls.DataGrid
+dotnet atomui package AtomUI.Controls.DataGrid --detail --format json
+dotnet atomui package --product datagrid --include-conflicts --include-registration
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `packageId` | string | null | 不存在返回 `ATOMUICLI_PKG001` | NuGet package id。 |
+| `--product` | global string | all | 未知返回 `ATOMUICLI_PKG001` | 产品查询。 |
+| `--include-conflicts` | bool | true | 无 | 输出冲突和替代关系。 |
+| `--include-registration` | bool | true | 无 | 输出注册方法。 |
+| `--strict` | bool | false | 无 | 包 ID 要求精确匹配。 |
+| `--detail` | global bool | false | 无 | 输出依赖范围、引入版本和可见性。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record PackageCommandOptions(
@@ -12,61 +45,84 @@ public sealed record PackageCommandOptions(
     string? PackageId,
     bool IncludeConflicts,
     bool IncludeRegistration,
-    bool Strict) : IAtomUICliCommandOptions;
+    bool Strict,
+    bool Detail) : IAtomUICliCommandOptions;
 ```
 
-## Payload
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IPackageQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 创建 metadata 上下文。
+2. 若传入 package id，查询单包。
+3. 若传入 product，查询产品包集合。
+4. 否则列出可见产品包摘要。
+5. 应用 include-conflicts、include-registration 和 detail。
+6. 输出 payload。
+
+## 8. 领域服务契约
+
+```csharp
+public interface IPackageQueryService
+{
+    ValueTask<PackageQueryResult> QueryAsync(
+        PackageQuery query,
+        CancellationToken cancellationToken);
+}
+```
+
+分支：`FoundPackage`、`FoundProduct`、`ListProducts`、`NotFound`、`Ambiguous`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
 public sealed record PackageCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    IReadOnlyList<PackageDto> Packages,
+    ProductFilterDto ProductFilter,
+    IReadOnlyList<ProductPackageDto> Products,
+    PackageDetailDto? Package,
     IReadOnlyList<PackageConflictDto> Conflicts,
-    IReadOnlyList<RegistrationDto> RegistrationMethods);
+    IReadOnlyList<RegistrationDto> Registration,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+## 10. 输出格式
 
-依赖：
+- text：显示包 ID、版本范围、依赖和注册方法。
+- json：输出完整依赖、冲突、替代关系。
+- markdown：输出包说明表格。
 
-- `IPackageQueryService`
-- `IProductCatalogLoader`
-- `ICommercialDataDiagnosticService`
-- `IOutputWriter`
+## 11. 错误与退出码
 
-执行步骤：
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_PKG001` | 包或产品不存在 | `3` |
+| `ATOMUICLI_PKG002` | 包名歧义 | `3` |
+| `ATOMUICLI_DATA001` | 包数据不可用 | `4` |
 
-1. 解析目标版本和 product filter。
-2. 未传包 ID 时列出包。
-3. 传包 ID 时解析唯一包。
-4. 装载依赖、冲突、替代和注册方法。
-5. 应用商业可见性策略。
-6. 输出结果。
+## 12. AOT-first 约束
 
-## 输出规则
+包关系来自 metadata snapshot，不访问 NuGet feed。DTO 纳入 JSON context。
 
-- `text`：包级摘要和注册提示。
-- `json`：完整包图谱。
-- `markdown`：按产品分组输出包说明。
+## 13. 测试矩阵
 
-## 错误
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| list | `package` | 可见产品包摘要。 |
+| package | `package AtomUI.Controls` | 单包详情。 |
+| product | `--product datagrid` | 产品包集合。 |
+| strict | `package atomui.controls --strict` | 非精确命中返回 `ATOMUICLI_PKG001`。 |
+| not found | `package none` | `ATOMUICLI_PKG001`。 |
+| json | `--format json` | 冲突和注册字段稳定。 |
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+## 14. 实现文件建议
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_PKG001` | 包或产品不存在。 |
-| `ATOMUICLI_PKG002` | 包 ID 歧义。 |
-| `ATOMUICLI_DATA001` | 包数据不可用。 |
-| `ATOMUICLI_DATA003` | 外部数据 schema 不兼容。 |
-
-## 测试
-
-- 无参数列出公开包。
-- 指定包输出 dependencies 和 registration。
-- product filter 只返回目标产品包。
-- 商业数据不可用时输出降级提示。
-- 冲突关系排序稳定。
-
+- `src/AtomUI.Cli.Metadata/Commands/PackageCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/PackageCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/PackageQueryService.cs`

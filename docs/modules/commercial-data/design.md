@@ -1,96 +1,112 @@
 # AtomUICliCommercialDataModule 详细设计
 
-## 目标
+## 1. 模块定位
 
-`AtomUICliCommercialDataModule` 负责接入商业控件数据根，并在商业数据不可用时提供明确降级提示。它不动态加载商业程序集，不把商业私有 API 编译进公开包，也不改变公开 metadata schema 的语义。
+`AtomUICliCommercialDataModule` 为商业控件项目提供外部数据根、可见性控制和授权状态提示。它扩展 Metadata 模块的数据来源，不新增独立命令。
 
-## 项目与命名空间
+## 2. 模块注册
 
-| 项目 | 命名空间 | 说明 |
-| --- | --- | --- |
-| `src/AtomUI.Cli.Metadata` | `AtomUI.Cli.Metadata.Commercial` | 商业数据根、可见性和诊断服务。 |
-| `src/AtomUI.Cli.Abstractions` | `AtomUI.Cli.Metadata.Contracts` | 共享产品、包和可见性 DTO。 |
+| 字段 | 值 |
+| --- | --- |
+| 模块类型 | `AtomUICliCommercialDataModule` |
+| 依赖 | `AtomUICliMetadataModule` |
+| 命令贡献 | 无 |
+| 数据根贡献 | commercial metadata roots |
+| 写入能力 | 无 |
 
-## 数据根来源
+## 3. 数据根贡献
 
-商业数据根只来自显式配置：
-
-- 命令行 `--data-root <path>`。
-- 未来可选的本机配置文件登记路径。
-- 测试中的显式 fixture path。
-
-公开 CLI 包不内置商业私有 API 快照。若某个商业产品只有公开包级信息，命令只能输出包、注册、授权和数据根配置建议，不能输出不存在的控件 API。
-
-## 可见性策略
+商业模块通过 Data Root Contribution 提供数据根：
 
 ```csharp
-public interface ICommercialVisibilityPolicy
-{
-    CommercialVisibilityResult Evaluate(
-        ProductDescriptor product,
-        MetadataRootSet roots);
-}
+public sealed record CommercialDataRootDescriptor(
+    string ProductId,
+    string RootPath,
+    string SchemaVersion,
+    CommercialDataVisibility Visibility,
+    CommercialAuthorizationState AuthorizationState);
 ```
 
-可见性结果：
+贡献规则：
 
-- `Public`：公开数据完整。
-- `CommercialAvailable`：商业数据根存在且 schema 兼容。
-- `CommercialUnavailable`：商业产品已知，但无数据根。
-- `CommercialIncompatible`：数据根 schema 或版本不兼容。
-- `CommercialUnauthorized`：数据根存在但授权诊断失败。
+- root id 必须唯一。
+- product id 必须与 product catalog 匹配。
+- schema version 必须被当前 CLI 支持。
+- 未授权或不可读时不加载私有字段。
 
-命令输出必须根据可见性裁剪字段。
+## 4. 可见性模型
 
-## 快照加载
-
-`ICommercialSnapshotLoader` 复用 metadata loader 的 gzip/plain JSON 机制，但增加额外校验：
-
-- `schemaVersion` 必须等于当前 `AtomUICliDataSchemaVersion`。
-- `visibility` 必须为 `commercial` 或 `internal-commercial`。
-- 快照 product id 必须和产品清单一致。
-- 不允许覆盖公开快照中的 public product id。
-
-## 诊断服务
-
-`ICommercialDataDiagnosticService` 提供统一提示：
-
-| 场景 | 输出 |
+| Visibility | 行为 |
 | --- | --- |
-| 未配置数据根 | 提示 `--data-root` 和可公开包级信息。 |
-| 数据根不存在 | 输出路径和 `ATOMUICLI_DATA001`。 |
-| schema 不兼容 | 输出当前 schema、期望 schema 和 `ATOMUICLI_DATA003`。 |
-| 版本不匹配 | 输出可用版本、目标版本和 `ATOMUICLI_DATA004`。 |
-| 授权失败 | 输出授权状态和 `ATOMUICLI_DATA005`，不泄露私有内容。 |
+| `Public` | 可进入公开查询结果。 |
+| `CommercialSummary` | 只输出包、产品和配置提示。 |
+| `CommercialFull` | 输出商业控件 API、Token、Demo、文档。 |
+| `Internal` | 不进入普通 CLI 输出。 |
 
-## 与公开命令的关系
+查询命令必须按 visibility 裁剪字段。不可见字段不能在 JSON 中输出 null 伪装为可见字段，应直接省略或返回数据不可用 warning。
 
-商业模块不新增独立命令。它通过数据根和 visibility policy 影响下列命令：
+## 5. 授权状态
 
-- `list`
-- `info`
-- `package`
-- `doctor`
-- `add`
-- `upgrade`
-
-命令 handler 仍依赖公开 query service，由 query service 组合商业可见性结果。
-
-## AOT-first 实现要求
-
-- 不动态加载商业程序集。
-- 不反射商业控件 API。
-- 商业 DTO 纳入 source generated JSON context。
-- 数据根 provider 显式注册，不扫描目录发现 provider 插件。
-
-## 测试设计
-
-| 测试文件 | 覆盖点 |
+| 状态 | 行为 |
 | --- | --- |
-| `CommercialDataRootResolverTests` | `--data-root` 解析和优先级。 |
-| `CommercialSnapshotLoaderTests` | schema、visibility、版本校验。 |
-| `CommercialVisibilityPolicyTests` | 可见性裁剪。 |
-| `CommercialDataDiagnosticServiceTests` | 缺失、失配和授权提示。 |
-| `CommercialCommandIntegrationTests` | list/info/package 的降级输出。 |
+| `Unknown` | 只输出配置建议，不输出私有 API。 |
+| `Missing` | 返回 `ATOMUICLI_DATA004`。 |
+| `Invalid` | 返回 `ATOMUICLI_DATA004`，带修复提示。 |
+| `Valid` | 允许加载商业数据。 |
 
-fixture 必须使用虚构商业产品和虚构控件名，不包含真实私有 API。
+CLI 不负责联网校验授权。授权状态来自本地数据根或配置文件。
+
+## 6. Metadata 合并
+
+商业数据使用与公开数据相同的 snapshot 模型：
+
+- product descriptor；
+- package descriptor；
+- control descriptor；
+- token descriptor；
+- demo descriptor；
+- document descriptor；
+- changelog entry。
+
+合并规则：
+
+- 商业数据不能覆盖公开 schema 语义。
+- 商业产品 ID 与公开产品冲突时，商业数据根加载失败。
+- 商业数据缺失时，知识查询命令仍可输出包级安装和注册建议。
+- `--product` 指向商业产品但数据不可用时，返回结构化错误。
+
+## 7. 错误映射
+
+| 场景 | 错误码 | 退出码 |
+| --- | --- | --- |
+| 商业 root 不存在 | `ATOMUICLI_DATA004` | `4` |
+| 商业 schema 不兼容 | `ATOMUICLI_DATA002` | `4` |
+| 商业 product 未知 | `ATOMUICLI_DATA005` | `4` |
+| 授权缺失或无效 | `ATOMUICLI_DATA004` | `4` |
+| 商业字段不可见 | warning，不失败 |
+
+## 8. DI 生命周期
+
+| 服务 | 生命周期 |
+| --- | --- |
+| commercial root provider | Singleton |
+| authorization state reader | Singleton |
+| visibility filter | Singleton |
+| data root descriptors | Singleton catalog |
+
+## 9. AOT-first 约束
+
+- 商业能力默认通过数据快照接入。
+- 不动态加载商业控件程序集。
+- 不通过 reflection 提取商业 API。
+- commercial DTO 纳入 metadata JSON context。
+
+## 10. 测试矩阵
+
+| 测试 | 覆盖 |
+| --- | --- |
+| missing root | `ATOMUICLI_DATA004`。 |
+| invalid schema | `ATOMUICLI_DATA002`。 |
+| visibility filter | 不可见字段不输出。 |
+| commercial product query | 有数据和无数据两种分支。 |
+| public query unaffected | 商业数据缺失不影响公开控件查询。 |

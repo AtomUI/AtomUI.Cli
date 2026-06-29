@@ -1,78 +1,129 @@
 # dotnet atomui token 详细设计
 
-## 目标
+## 1. 命令定位
 
-`token` 查询全局、共享和控件级设计 Token。它用于主题定制、样式决策和组件外观诊断。
+`token` 查询 AtomUI 全局 Token 或控件 Token，用于主题、样式和 Agent 生成样式代码。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui token
+dotnet atomui token Button
+dotnet atomui token Button --name colorPrimary
+dotnet atomui token --scope global --format json
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `control` | string | null | 不存在返回 `ATOMUICLI_CTRL001` | 控件 token 查询。 |
+| `--scope` | enum | all | 非法返回 `ATOMUICLI_ARG002` | `global`、`control`、`all`；无 control 时 `all` 只返回全局 Token。 |
+| `--name` | string | null | 不存在返回 `ATOMUICLI_CTRL004` | token 名过滤。 |
+| `--match` | string | null | 无 | 按名称或描述做大小写不敏感过滤。 |
+| `--include-inherited` | bool | true | 无 | 是否包含继承 token。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record TokenCommandOptions(
     GlobalCliOptions Global,
     string? Control,
+    TokenScope Scope,
     string? Name,
-    TokenScopeFilter Scope,
-    string? Match) : IAtomUICliCommandOptions;
+    string? Match,
+    bool IncludeInherited) : IAtomUICliCommandOptions;
+```
 
-public enum TokenScopeFilter
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IControlQueryService`
+- `ITokenQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 解析 scope：无 control 时默认 global，有 control 时默认 control。
+2. 若传入 control，先解析控件。
+3. 调用 token query service。
+4. 应用 name、match 和 inherited 过滤。
+5. 构建 payload。
+6. 输出。
+
+## 8. 领域服务契约
+
+```csharp
+public interface ITokenQueryService
 {
-    Global,
-    Control,
-    All
+    ValueTask<TokenQueryResult> QueryAsync(
+        TokenQuery query,
+        CancellationToken cancellationToken);
 }
 ```
 
-## Payload
+分支：`Found`、`TokenNotFound`、`ControlNotFound`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
 public sealed record TokenCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    string Scope,
-    string? Control,
-    IReadOnlyList<TokenDto> Tokens);
+    TokenScope Scope,
+    ControlSummaryDto? Control,
+    IReadOnlyList<TokenDto> Tokens,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+`TokenDto` 包含 name、type、defaultValue、description、scope、source、isInherited。
 
-依赖：
+## 10. 输出格式
 
-- `IControlQueryService`
-- `ITokenQueryService`
-- `IOutputWriter`
+- text：按 category 分组显示 token。
+- json：输出完整 token 字段。
+- markdown：输出 token 表格。
 
-执行步骤：
+## 11. 错误与退出码
 
-1. 校验 scope。
-2. 如果传入控件名，解析控件。
-3. 如果传入 token 名，先做精确查询。
-4. 应用 `--match` 模糊过滤。
-5. 按 scope、control、name 排序。
-6. 输出结果。
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_ARG002` | scope 非法 | `2` |
+| `ATOMUICLI_CTRL001` | 控件不存在 | `3` |
+| `ATOMUICLI_CTRL004` | token 不存在 | `3` |
+| `ATOMUICLI_DATA001` | token 数据不可用 | `4` |
 
-## 输出规则
+## 12. AOT-first 约束
 
-- `text`：表格列为 `Token`、`Scope`、`Type`、`Default`、`Status`。
-- `json`：输出 token 全字段，包括 source 和 since。
-- `markdown`：按 scope 分组。
+Token 数据只来自 snapshot。DTO 纳入 JSON context。scope/name 匹配使用 ordinal ignore case。
 
-## 错误
+## 13. 测试矩阵
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| global | `token` | global tokens。 |
+| control | `token Button` | Button tokens。 |
+| name | `--name colorPrimary` | 单 token。 |
+| match | `--match color` | 模糊过滤 token。 |
+| inherited false | `--include-inherited false` | 不含继承项。 |
+| missing | `--name none` | `ATOMUICLI_CTRL004`。 |
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG002` | scope 非法。 |
-| `ATOMUICLI_CTRL001` | 控件不存在。 |
-| `ATOMUICLI_CTRL004` | token 不存在。 |
-| `ATOMUICLI_DATA001` | token 数据不可用。 |
+## 14. 实现文件建议
 
-## 测试
-
-- 无参数返回 global/shared token。
-- 指定控件返回控件 token。
-- `--name` 不存在时返回候选建议。
-- `--match` 过滤名称和描述。
-- 输出不读取用户主题文件。
-
+- `src/AtomUI.Cli.Metadata/Commands/TokenCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/TokenCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/TokenQueryService.cs`

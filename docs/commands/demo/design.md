@@ -1,86 +1,134 @@
 # dotnet atomui demo 详细设计
 
-## 目标
+## 1. 命令定位
 
-`demo` 查询控件示例列表或具体示例源码。示例来源于构建期从 Gallery ShowCase 提取的 AXAML、code-behind 和 ViewModel 片段。
+`demo` 列出或输出控件示例代码。它面向开发者复制示例，也面向 Agent 生成符合 AtomUI 用法的代码。
 
-## Options
+## 2. 所属模块与注册
+
+| 字段 | 值 |
+| --- | --- |
+| 所属模块 | `AtomUICliMetadataModule` |
+| 注册阶段 | `ConfigureAtomUICliCommands` |
+| 分组 | knowledge |
+| 读写 | `isReadOnly=true` |
+| 项目上下文 | `requiresProject=false` |
+| 写入确认 | `requiresWriteConfirmation=false` |
+| Handler 生命周期 | Transient |
+| 支持格式 | text、json、markdown |
+
+## 3. 调用语法
+
+```bash
+dotnet atomui demo Button
+dotnet atomui demo Button basic
+dotnet atomui demo DataGrid filtering --product datagrid --language xaml --format markdown
+dotnet atomui demo Button --list --format json
+```
+
+## 4. 参数与选项
+
+| 参数 | 类型 | 默认值 | 校验 | 说明 |
+| --- | --- | --- | --- | --- |
+| `control` | string | 必填 | 缺失返回 `ATOMUICLI_ARG001` | 控件名。 |
+| `name` | string | null | 不存在返回 `ATOMUICLI_CTRL003` | 示例名；未传入时列出示例。 |
+| `--scenario` | string | null | 无匹配时输出空列表和 warning | 场景过滤，例如 `basic`、`form`、`theme`。 |
+| `--strict` | bool | false | 无 | 控件名和示例名要求精确匹配。 |
+| `--list` | bool | false | 与具体 demo 可共存时忽略 detail | 只列示例摘要。 |
+| `--code-only` | bool | false | 仅在具体 demo 时有效 | 只输出代码。 |
+| `--language` | enum | `all` | 非法返回 `ATOMUICLI_ARG002` | `xaml`、`csharp`、`all`。 |
+
+## 5. Options 类型
 
 ```csharp
 public sealed record DemoCommandOptions(
     GlobalCliOptions Global,
     string Control,
-    string? Name,
-    DemoLanguage Language,
+    string? DemoName,
     string? Scenario,
-    bool Strict) : IAtomUICliCommandOptions;
+    bool Strict,
+    bool ListOnly,
+    bool CodeOnly,
+    DemoLanguage Language) : IAtomUICliCommandOptions;
+```
 
-public enum DemoLanguage
+## 6. Handler 依赖
+
+- `IMetadataCommandContextFactory`
+- `IControlQueryService`
+- `IDemoQueryService`
+- `IOutputWriter`
+
+## 7. 执行流程
+
+1. 校验控件名。
+2. 解析控件。
+3. 查询 demo list 或 demo detail。
+4. 应用 scenario、language 和 code-only。
+5. 构建 payload。
+6. 输出 text/json/markdown。
+
+## 8. 领域服务契约
+
+```csharp
+public interface IDemoQueryService
 {
-    All,
-    Axaml,
-    CSharp
+    ValueTask<DemoQueryResult> QueryAsync(
+        DemoQuery query,
+        CancellationToken cancellationToken);
 }
 ```
 
-## Payload
+分支：`ListFound`、`DemoFound`、`ControlNotFound`、`DemoNotFound`、`DataUnavailable`。
+
+## 9. 输出模型
 
 ```csharp
 public sealed record DemoCommandPayload(
     string SchemaVersion,
     string Command,
     string TargetVersion,
-    string Control,
-    IReadOnlyList<DemoDto> Demos);
-
-public sealed record DemoDto(
-    string Name,
-    string Title,
-    string? Description,
-    string Scenario,
-    IReadOnlyList<DemoFileDto> Files);
+    ControlSummaryDto Control,
+    IReadOnlyList<DemoSummaryDto> Demos,
+    DemoDetailDto? SelectedDemo,
+    IReadOnlyList<WarningDto> Warnings);
 ```
 
-## Handler
+`DemoDetailDto` 包含 name、title、description、xaml code、csharp code、required packages、registration hints。
 
-依赖：
+## 10. 输出格式
 
-- `IControlQueryService`
-- `IDemoQueryService`
-- `IPackageQueryService`
-- `IOutputWriter`
+- text：list 模式输出 demo 名称和标题；detail 模式输出说明和代码块。
+- json：输出完整 payload。
+- markdown：输出带 heading 和 fenced code block 的示例文档。
+- code-only：stdout 只输出请求语言代码，不输出标题。
 
-执行步骤：
+## 11. 错误与退出码
 
-1. 解析控件。
-2. 未传 `Name` 时查询 demo summary。
-3. 传 `Name` 时解析唯一 demo。
-4. 应用 `--language` 和 `--scenario` 过滤。
-5. 附加包和注册提示。
-6. 输出结果。
+| 错误码 | 触发 | 退出码 |
+| --- | --- | --- |
+| `ATOMUICLI_ARG001` | 缺少控件名 | `2` |
+| `ATOMUICLI_ARG002` | language 非法 | `2` |
+| `ATOMUICLI_CTRL001` | 控件不存在 | `3` |
+| `ATOMUICLI_CTRL003` | demo 不存在 | `3` |
+| `ATOMUICLI_DATA004` | 商业 demo 不可用 | `4` |
 
-## 输出规则
+## 12. AOT-first 约束
 
-- 列表模式 text 输出 `Name`、`Title`、`Scenario`。
-- 详情模式 markdown 输出多个 code fence。
-- JSON 输出保留文件路径、语言、起止行号和内容。
+示例代码来自 metadata snapshot。不得扫描 Gallery 源码或文件系统。DTO 纳入 JSON source generation。
 
-## 错误
+## 13. 测试矩阵
 
-错误码、退出码、stderr/stdout 边界遵守 [AtomUI Cli 错误码标准](../error-code-standard.md)。下表只列本命令可能返回的错误码子集。
+| 场景 | 输入 | 期望 |
+| --- | --- | --- |
+| list | `demo Button --list` | demo 摘要列表。 |
+| detail | `demo Button basic` | 输出代码和依赖。 |
+| code only | `--code-only` | stdout 只有代码。 |
+| missing demo | `demo Button none` | `ATOMUICLI_CTRL003`。 |
+| json | `--format json` | payload 稳定。 |
 
-| 错误码 | 场景 |
-| --- | --- |
-| `ATOMUICLI_ARG001` | 缺少控件名。 |
-| `ATOMUICLI_ARG002` | language 非法。 |
-| `ATOMUICLI_CTRL001` | 控件不存在。 |
-| `ATOMUICLI_CTRL003` | demo 不存在。 |
-| `ATOMUICLI_DATA001` | 示例数据不可用。 |
+## 14. 实现文件建议
 
-## 测试
-
-- 不传 demo 名返回列表。
-- `--language axaml` 只返回 AXAML 片段。
-- demo 名大小写不敏感。
-- `--strict` 禁止候选 fallback。
-- 示例内容保持构建期提取的原始缩进。
+- `src/AtomUI.Cli.Metadata/Commands/DemoCommandOptions.cs`
+- `src/AtomUI.Cli.Metadata/Commands/DemoCommandHandler.cs`
+- `src/AtomUI.Cli.Metadata/Queries/DemoQueryService.cs`

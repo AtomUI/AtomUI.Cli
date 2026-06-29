@@ -84,7 +84,7 @@ json 输出示例：
 | `ATOMUICLI_PKG001` | `3` | 包或产品不存在。 |
 | `ATOMUICLI_PKG002` | `3` | 包 ID 存在歧义。 |
 | `ATOMUICLI_DATA001` | `4` | 包数据不可用。 |
-| `ATOMUICLI_DATA003` | `4` | 商业数据 schema 不兼容。 |
+| `ATOMUICLI_DATA002` | `4` | 商业数据 schema 不兼容。 |
 
 ## AOT 约束
 
@@ -100,3 +100,9 @@ json 输出示例：
 - 商业数据缺失时输出降级提示。
 - 冲突关系按稳定顺序输出。
 
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [知识查询命令共享设计](../knowledge-query-design.md)
+- [错误码标准](../error-code-standard.md)

@@ -9,24 +9,26 @@ public sealed class AtomUICliApplication : IAsyncDisposable
 {
     private readonly IReadOnlyList<string> _args;
     private readonly IReadOnlyList<ModuleRegistration> _moduleRegistrations;
-    private readonly IReadOnlyList<Type> _enabledModuleTypes;
+    private readonly CommandManifestCatalog _commandManifestCatalog;
     private readonly IReadOnlyList<Action<IServiceCollection>> _serviceConfigurations;
 
     internal AtomUICliApplication(
         IReadOnlyList<string> args,
         IReadOnlyList<ModuleRegistration> moduleRegistrations,
-        IReadOnlyList<Type> enabledModuleTypes,
+        CommandManifestCatalog commandManifestCatalog,
         IReadOnlyList<Action<IServiceCollection>> serviceConfigurations)
     {
         _args = args;
         _moduleRegistrations = moduleRegistrations;
-        _enabledModuleTypes = enabledModuleTypes;
+        _commandManifestCatalog = commandManifestCatalog;
         _serviceConfigurations = serviceConfigurations;
     }
 
     public ModuleHost? ModuleHost { get; private set; }
 
     public IHost? Host { get; private set; }
+
+    public CommandManifestCatalog CommandManifests => _commandManifestCatalog;
 
     public CliCommandDescriptorCatalog Commands { get; private set; } = CliCommandDescriptorCatalog.Empty;
 
@@ -40,7 +42,15 @@ public sealed class AtomUICliApplication : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         var runArgs = args ?? _args;
-        ModuleHost = new ModuleHost(_moduleRegistrations, new ModuleHostOptions(_enabledModuleTypes));
+        var preParseResult = new CommandPreParser().Parse(runArgs, _commandManifestCatalog);
+        if (!preParseResult.IsSuccess)
+        {
+            return new Errors.ExitCodeMapper(Errors.ErrorCodeCatalog.Default).Map(
+                AtomUICliResult.Failure(preParseResult.Error!));
+        }
+
+        var activationPlan = new ModuleActivationPlanner(typeof(AtomUICliCoreModule)).Plan(preParseResult.Manifest!);
+        ModuleHost = new ModuleHost(_moduleRegistrations, new ModuleHostOptions(activationPlan.ModuleTypes));
 
         try
         {
@@ -82,7 +92,12 @@ public sealed class AtomUICliApplication : IAsyncDisposable
             }
 
             Commands = await ConfigureCommandsAsync(ModuleHost, cancellationToken);
-            Host = AtomUICliApplicationBuilder.BuildHost(runArgs, ModuleHost.Services, Commands, _serviceConfigurations);
+            Host = AtomUICliApplicationBuilder.BuildHost(
+                runArgs,
+                ModuleHost.Services,
+                Commands,
+                _commandManifestCatalog,
+                _serviceConfigurations);
 
             lifecycleResult = await ModuleHost.InitializeModulesAsync(cancellationToken);
             if (!lifecycleResult.IsSuccess)

@@ -1,0 +1,80 @@
+name: AtomUI.Cli Release Pipeline
+
+on:
+  push:
+    branches:
+      - release/1.0
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: "Target branch to build"
+        type: string
+        default: "release/1.0"
+      build_configuration:
+        description: "Build configuration"
+        type: string
+        default: "Release"
+      publish_to_nuget:
+        description: "Publish to nuget.org"
+        type: boolean
+        default: false
+
+env:
+  SOURCE_DIR: ${{ github.workspace }}
+  OUTPUT_DIR: ${{ github.workspace }}/output
+  BUILD_CONFIGURATION: ${{ github.event.inputs.build_configuration || 'Release' }}
+  TARGET_BRANCH: ${{ github.event.inputs.target_branch || github.ref_name }}
+
+jobs:
+  BuildAtomUICliTool:
+    name: Build AtomUI.Cli tool package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore AtomUI.Cli
+        shell: pwsh
+        run: |
+          dotnet restore ./AtomUICli.slnx
+
+      - name: Build AtomUI.Cli
+        shell: pwsh
+        run: |
+          dotnet build --configuration $env:BUILD_CONFIGURATION --no-restore ./AtomUICli.slnx
+
+      - name: Test AtomUI.Cli
+        shell: pwsh
+        run: |
+          dotnet test ./tests/AtomUI.Cli.Tests/AtomUI.Cli.Tests.csproj --configuration $env:BUILD_CONFIGURATION --no-build
+
+      - name: Create AtomUI.Cli NuGet tool package
+        shell: pwsh
+        run: |
+          dotnet pack ./src/AtomUI.Cli/AtomUI.Cli.csproj --configuration $env:BUILD_CONFIGURATION --no-build --no-restore /m:1 /nr:false --output $env:OUTPUT_DIR/Nuget
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuGetPackages
+          path: ${{ env.OUTPUT_DIR }}/Nuget/*.nupkg
+
+      - name: Publish to nuget.org
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_nuget == 'true' }}
+        shell: pwsh
+        run: |
+          $packages = Get-ChildItem -Path "$env:OUTPUT_DIR/Nuget" -Filter *.nupkg -Recurse -File
+          foreach ($pkg in $packages) {
+            dotnet nuget push $pkg.FullName --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            Write-Output "Published NuGet package: $($pkg.Name)"
+          }

@@ -88,7 +88,7 @@ json 输出示例：
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG002` | `2` | severity 或 rule 参数非法。 |
-| `ATOMUICLI_PRJ001` | `3` | 未找到项目。 |
+| `ATOMUICLI_PRJ001` | `4` | 未找到项目。 |
 | `ATOMUICLI_PRJ002` | `4` | 项目文件无法读取。 |
 | `ATOMUICLI_DATA001` | `4` | 诊断所需 metadata 不可用。 |
 | `ATOMUICLI_PKG003` | `5` | 包冲突或兼容性 error。 |
@@ -109,3 +109,10 @@ json 输出示例：
 - `--severity warning` 过滤 info。
 - `--fail-on-warning` 在 warning 时返回 `5`。
 - `--no-usage-scan` 不读取 XAML/C# 文件。
+
+## 相关文档
+
+- [详细设计](design.md)
+- [命令设计标准](../command-design-standard.md)
+- [项目分析命令共享设计](../project-analysis-design.md)
+- [错误码标准](../error-code-standard.md)

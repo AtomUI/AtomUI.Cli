@@ -1,143 +1,207 @@
 # AtomUICliCoreModule 详细设计
 
-## 目标
+## 1. 模块定位
 
-`AtomUICliCoreModule` 提供所有命令共享的运行时基础设施。它不包含 AtomUI 业务查询逻辑，也不读取用户项目。实现时应把“进程入口、命令解析、scope 创建、输出、错误映射、取消传播”集中在 `AtomUI.Cli.Hosting`，避免业务模块重复处理这些横切逻辑。
+`AtomUICliCoreModule` 提供 AtomUI Cli 的底层运行时能力：应用生命周期、模块编排、GenericHost 集成、DI 容器映射、命令 catalog、命令解析、命令 scope、输出、错误码和退出码。
 
-## 项目与命名空间
+Core 模块不包含 AtomUI 控件知识，不读取用户项目，不实现 MCP tool，不执行写入。
 
-| 项目 | 命名空间 | 说明 |
-| --- | --- | --- |
-| `src/AtomUI.Cli.Hosting` | `AtomUI.Cli.Hosting` | Application、Host builder、命令调度。 |
-| `src/AtomUI.Cli.Hosting` | `AtomUI.Cli.Hosting.Commands` | 命令 descriptor、parser、dispatcher。 |
-| `src/AtomUI.Cli.Hosting` | `AtomUI.Cli.Hosting.Output` | stdout/stderr writer 和格式化。 |
-| `src/AtomUI.Cli.Abstractions` | `AtomUI.Cli` | 结果、错误、退出码和基础 DTO。 |
+## 2. 模块注册
 
-## 核心类型
-
-| 类型 | 类型种类 | 职责 |
-| --- | --- | --- |
-| `AtomUICliApplication` | class | CLI 应用编排器，持有 `ModuleHost`、`IHost` 和冻结 catalogs。 |
-| `AtomUICliApplicationBuilder` | class | 组装 args、module registrations、Host 配置和全局选项。 |
-| `CliInvocationContext` | sealed class | 当前命令的只读上下文，包含原始 args、全局选项、取消令牌和 trace id。 |
-| `CliCommandDescriptor` | readonly record struct | 命令名称、options 类型、handler 类型、输出能力和只读/写入属性。 |
-| `CliCommandDescriptorCatalog` | sealed class | 冻结命令 catalog，提供命令查找和帮助信息。 |
-| `IAtomUICliCommandHandler<TOptions>` | interface | 命令 handler 契约。 |
-| `AtomUICliResult` | readonly record struct | 成功、业务失败、诊断失败和取消结果。 |
-| `AtomUICliError` | readonly record struct | 错误码、消息、建议、文件位置和 inner category。 |
-| `IErrorCodeCatalog` | interface | 错误码注册表，提供 code、domain、类型和退出码元数据。 |
-
-## 命令调度契约
-
-```csharp
-public interface IAtomUICliCommandHandler<in TOptions>
-{
-    ValueTask<AtomUICliResult> ExecuteAsync(
-        TOptions options,
-        CliInvocationContext context,
-        CancellationToken cancellationToken);
-}
-```
-
-调度流程由 `ICliCommandDispatcher` 统一控制：
-
-1. `ICliCommandParser.Parse(args, catalog)` 解析全局选项和子命令 options。
-2. dispatcher 根据 descriptor 创建命令级 `IServiceScope`。
-3. scope 内注册 `CliInvocationContext`、`GlobalCliOptions`、`IOutputWriter`、`IErrorWriter`。
-4. 从 scope 解析强类型 handler。
-5. 调用 `ExecuteAsync`。
-6. `IExitCodeMapper` 把 `AtomUICliResult` 转换为进程退出码。
-
-业务 handler 不允许创建 scope，不允许接收根 `IServiceProvider`。
-
-## 输出模型
-
-| 类型 | 说明 |
+| 字段 | 值 |
 | --- | --- |
-| `IOutputWriter` | 只写 stdout，负责 text/json/markdown 输出。 |
-| `IErrorWriter` | 只写 stderr，负责错误、参数提示和诊断摘要。 |
-| `IErrorCodeCatalog` | 错误码标准的运行时只读 catalog。 |
-| `IJsonOutputSerializer` | 统一使用 source generated `JsonSerializerContext`。 |
-| `IMarkdownWriter` | 提供 heading、table、code block 等稳定格式。 |
+| 模块类型 | `AtomUICliCoreModule` |
+| 依赖 | 无 |
+| 命令贡献 | `--help`、`--version` 内置入口 |
+| 服务注册 | command runtime、output runtime、error runtime |
+| 生命周期职责 | 驱动 `ModuleHost` 和 `IHost` 的顺序 |
 
-输出规则：
+## 3. Application 生命周期
 
-- 成功结果只写 stdout。
-- 失败结果优先写 stderr；当 `--format json` 时，stderr 输出结构化错误摘要，stdout 保持为空。
-- `--format markdown` 只能用于命令声明支持 markdown 的 descriptor。
-- writer 不负责业务字段裁剪，字段选择由 handler 或 query service 完成。
-
-## 错误与退出码
-
-错误码、诊断码和退出码遵守 [AtomUI Cli 错误码标准](../../commands/error-code-standard.md)。错误码到退出码不能只按前缀粗略判断，必须以注册表中的具体 code 为准。
-
-例如：
-
-- `ATOMUICLI_PKG001` 表示包或产品不存在，默认退出码为 `3`。
-- `ATOMUICLI_PKG003` 表示包冲突或兼容性诊断，失败阈值命中时退出码为 `5`。
-
-`IExitCodeMapper` 处理三类输入：
-
-| 输入 | 映射规则 |
-| --- | --- |
-| 成功结果 | 返回 `0`。 |
-| `AtomUICliError` | 按 `IErrorCodeCatalog` 中的具体错误码映射。 |
-| 诊断 payload | 存在 error 或 `--fail-on-warning` 命中时返回 `5`，否则返回 `0`。 |
-
-默认退出码摘要：
-
-| 退出码 | 场景 |
-| --- | --- |
-| `1` | 未分类异常、模块失败、MCP 运行时失败、取消。 |
-| `2` | 参数错误或命令不存在。 |
-| `3` | 查询目标不存在或存在歧义。 |
-| `4` | 数据不可用、schema 不兼容、项目文件或源码无法读取。 |
-| `5` | 项目诊断、包冲突、AOT 或 lint finding 达到失败阈值。 |
-| `6` | 写入计划冲突、配置读取失败或文件写入失败。 |
-
-模块初始化阶段抛出的异常必须先转为 `AtomUICliError`，再进入统一退出码映射。
-
-## 生命周期设计
-
-`AtomUICliApplication.RunAsync` 是唯一能驱动模块生命周期和 Host 生命周期的入口：
+`AtomUICliApplication` 是唯一生命周期编排器：
 
 ```text
-Build module host
-Resolve and create modules
-Configure module services
-Freeze module services
-Configure CLI contribution catalogs
-Build GenericHost
-Initialize modules
-Start GenericHost
-Dispatch command or run MCP server
-Stop GenericHost
-Shutdown modules
-Dispose
+CreateBuilder
+  -> LoadCommandManifestCatalog
+  -> PreParseCommandName
+  -> PlanActiveModules
+  -> ResolveActiveModules
+  -> CreateActiveModules
+  -> ConfigureActiveModuleServices
+  -> FreezeActiveModuleServices
+  -> ConfigureActiveCliContributions
+  -> FreezeActiveCliCatalogs
+  -> BuildGenericHost
+  -> InitializeActiveModules
+  -> StartHost
+  -> DispatchCommand / RunMcpServer
+  -> StopHost
+  -> ShutdownActiveModules
+  -> Dispose
 ```
 
-失败处理：
+失败规则：
 
-- Host build 前失败：不调用 `IHost.StartAsync`，但已创建的 module instances 需要 shutdown。
-- 命令执行失败：仍执行 `IHost.StopAsync` 和 `ModuleHost.ShutdownAsync`。
-- Ctrl+C：通过 `CancellationToken` 进入 handler，handler 返回取消结果。
+- Host build 前失败：不调用 `IHost.StartAsync`。
+- Host build 后失败：必须 `StopAsync` 并 `Dispose`。
+- 模块已创建时必须调用 shutdown。
+- 命令失败不能跳过 shutdown。
+- Ctrl+C 通过 `CancellationToken` 传播到 handler。
+- 未在 activation plan 中的模块不能创建实例、注册服务或执行生命周期钩子。
 
-## AOT-first 实现要求
+## 4. 命令预解析与模块激活
 
-- 命令 descriptor 由模块 contribution 显式注册，不通过反射扫描。
-- options binding 使用静态 parser 或 source generated binder。
-- JSON context 必须包含核心错误、帮助、版本和所有基础结果 DTO。
-- `ActivatorUtilities` 只允许在 Hosting 层解析已注册 handler，不作为业务对象工厂。
-- 默认 Host provider 保持最小集合，不启用会触发 Native AOT 警告的 provider。
+Core 模块必须在完整模块生命周期之前完成轻量命令预解析。预解析只识别命令名和必要的全局参数，不创建业务 options，也不访问用户项目。
 
-## 测试设计
+```text
+Raw args
+  -> CommandPreParser
+  -> CommandManifestCatalog
+  -> ModuleActivationPlanner
+  -> ModuleActivationPlan
+```
 
-| 测试文件 | 覆盖点 |
+| 对象 | 职责 |
 | --- | --- |
-| `AtomUICliApplicationTests` | 状态机顺序、失败路径、shutdown 保证。 |
-| `CliCommandDispatcherTests` | scope 创建、handler 解析、取消传播。 |
-| `CliCommandParserTests` | 全局选项、未知命令、help/version。 |
-| `OutputWriterTests` | stdout/stderr 分离和格式稳定性。 |
-| `ExitCodeMapperTests` | error code catalog 映射、硬错误退出码和诊断 severity 聚合。 |
+| `CommandManifest` | 命令轻量描述，包含名称、所属模块、额外 required modules、分组、支持格式、读写属性和项目要求。 |
+| `CommandManifestCatalog` | 所有命令的轻量索引，来自显式代码或 source generator，不依赖模块实例。 |
+| `CommandPreParser` | 解析 `--version`、`--help`、`--format` 和命令名。 |
+| `ModuleActivationPlanner` | 根据命令所属模块、命令级 required modules 和硬模块依赖计算本次运行的 active modules。 |
+| `ModuleActivationPlan` | 冻结后的激活集合，作为 `ModuleHost` 的启用模块输入。 |
 
-测试夹具应使用 fake module 和 fake handler，不依赖 metadata 快照。
+激活规则：
+
+- Core 模块始终激活。
+- 普通命令激活所属模块、命令声明的 required modules，以及这些模块的硬依赖闭包。
+- `help` 默认只读取 manifest；`help <command>` 可以激活目标命令所属模块以输出详细帮助。
+- `mcp` 启动时只激活 Core 和 MCP，tool invocation 再按 tool 所属模块懒激活。
+- 未知命令从 manifest 生成错误和建议，不触发全部模块加载。
+
+## 5. DI 容器化
+
+模块服务先进入 `ModuleServiceCollection`，冻结后通过 mapper 进入 GenericHost。
+
+```text
+ModuleServiceCollection
+  -> ModuleServiceRegistry
+  -> ModuleServiceDescriptorMapper
+  -> IServiceCollection
+  -> IHost
+  -> root IServiceProvider
+```
+
+Core 模块负责：
+
+- 注册 runtime singleton。
+- 注册 command dispatcher。
+- 注册 stdout/stderr writer。
+- 注册 error code catalog。
+- 注册 frozen catalogs。
+- 为每次命令创建 scope。
+- 按 activation plan 将 active module 服务映射到 GenericHost。
+
+业务模块禁止保存 root provider。多贡献能力必须通过 catalog，不通过 `IEnumerable<T>` 枚举 DI 服务发现。
+
+## 6. 命令 Descriptor
+
+```csharp
+public sealed record CliCommandDescriptor(
+    string Name,
+    CommandGroup Group,
+    Type OptionsType,
+    Type HandlerType,
+    IReadOnlySet<OutputFormat> SupportedFormats,
+    bool IsReadOnly,
+    bool RequiresProject,
+    bool RequiresWriteConfirmation,
+    Func<GlobalCliOptions, IReadOnlyList<string>, IAtomUICliCommandOptions> OptionsFactory);
+```
+
+catalog 规则：
+
+- 命令名 ordinal ignore case 唯一。
+- handler 必须实现 `IAtomUICliCommandHandler<TOptions>`。
+- options 必须实现 `IAtomUICliCommandOptions`。
+- write 命令必须设置 `RequiresWriteConfirmation=true`。
+- unsupported format 在 parser/dispatcher 边界返回参数错误。
+
+## 7. 命令执行
+
+```text
+CommandPreParser.ParseCommandName
+  -> ModuleActivationPlanner.Plan
+  -> active module lifecycle
+  -> CliCommandParser.Parse
+  -> CliCommandDescriptorCatalog.Get
+  -> descriptor.OptionsFactory
+  -> Create command IServiceScope
+  -> Bind CliInvocationContext
+  -> Resolve handler
+  -> ExecuteAsync
+  -> OutputWriter / ErrorWriter
+  -> ExitCodeMapper
+```
+
+`CliInvocationContext` 包含：
+
+- raw args；
+- command name；
+- global options；
+- command descriptor；
+- cancellation token；
+- trace id；
+- working directory。
+
+## 8. 输出设计
+
+| 服务 | 职责 |
+| --- | --- |
+| `IOutputWriter` | stdout，只写成功结果。 |
+| `IErrorWriter` | stderr，只写错误、诊断摘要和调试信息。 |
+| `IJsonOutputSerializer` | source generated JSON 输出。 |
+| `IMarkdownOutputRenderer` | markdown 输出。 |
+
+规则：
+
+- `--format json` 成功时 stdout 输出 JSON payload。
+- `--format json` 失败时 stdout 保持为空，stderr 输出 JSON error envelope。
+- text 输出面向人类，字段可以少于 JSON，但顺序必须稳定。
+- markdown 只允许命令 descriptor 声明支持。
+
+## 9. 错误与退出码
+
+`IExitCodeMapper` 是唯一退出码来源。
+
+| 输入 | 输出 |
+| --- | --- |
+| success result | `0` |
+| argument error | `2` |
+| not found / ambiguous | `3` |
+| data/project read error | `4` |
+| diagnostic failure | `5` |
+| write conflict/failure | `6` |
+| unexpected/module/mcp/cancel | `1` |
+
+错误码 catalog 必须显式注册，不通过反射扫描常量。
+
+## 10. AOT-first 约束
+
+- command catalog 由模块 contribution 显式构建。
+- command manifest catalog 由显式代码或 source generator 生成，不通过模块实例发现。
+- JSON serializer 使用 source generated context。
+- options factory 静态实现，不依赖动态 binder。
+- 不扫描程序集发现 handler。
+- `ActivatorUtilities` 只能在 Hosting 边界解析已注册 handler。
+
+## 11. 测试矩阵
+
+| 测试 | 覆盖 |
+| --- | --- |
+| lifecycle order | 模块 resolve/create/configure/freeze/init/shutdown 顺序。 |
+| module activation | 单命令只激活 Core、所属模块、命令级 required modules 和硬依赖模块。 |
+| command manifest | help、unknown command 和 format 校验不需要加载全部模块。 |
+| host stop guarantee | 命令失败和取消仍 stop/shutdown。 |
+| command catalog | 去重、格式支持、handler/options 类型校验。 |
+| command scope | 每次执行独立 scope。 |
+| stdout/stderr | 成功和错误分离。 |
+| exit code mapper | 所有错误域映射。 |
