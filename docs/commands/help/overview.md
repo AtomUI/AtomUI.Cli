@@ -39,7 +39,7 @@ Usage:
 
 Common commands:
   list                 List available AtomUI controls.
-  info <control>       Show metadata for a control.
+  info <control>       Show AtomUI control information.
   doc <control>        Generate usage documentation.
   demo <control>       Show demos for a control.
   doctor <path>        Diagnose an AtomUI project.
@@ -48,10 +48,11 @@ Common commands:
 Command groups:
   Knowledge:
     list               List controls and packages.
-    info               Show control metadata.
+    info               Show control information.
 
 Global options:
   --format <text|json|markdown>
+  --markdown
   --lang <zh|en>
   --target-version <version>
   --data-root <path>

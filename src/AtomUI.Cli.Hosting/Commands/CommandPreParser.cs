@@ -21,7 +21,7 @@ public sealed class CommandPreParser
         var formatResult = TryReadFormat(args, out var format);
         if (!formatResult)
         {
-            return CommandPreParseResult.Failure(CreateArgumentError("Invalid --format value."));
+            return CommandPreParseResult.Failure(CreateArgumentError("Invalid output format value."));
         }
 
         if (format is not null && !manifest.SupportedFormats.Contains(format.Value))
@@ -92,6 +92,12 @@ public sealed class CommandPreParser
         format = null;
         for (var index = 0; index < args.Count; index++)
         {
+            if (args[index].Equals("--markdown", StringComparison.Ordinal))
+            {
+                format = OutputFormat.Markdown;
+                continue;
+            }
+
             if (!args[index].Equals("--format", StringComparison.Ordinal))
             {
                 continue;
@@ -102,7 +108,13 @@ public sealed class CommandPreParser
                 return false;
             }
 
-            return TryParseFormat(args[index + 1], out format);
+            if (!TryParseFormat(args[index + 1], out var parsedFormat))
+            {
+                return false;
+            }
+
+            format = parsedFormat;
+            index++;
         }
 
         return true;
@@ -123,7 +135,7 @@ public sealed class CommandPreParser
 
     private static bool IsBooleanGlobalOption(string token)
     {
-        return token is "--detail" or "--no-update-check";
+        return token is "--detail" or "--no-update-check" or "--markdown";
     }
 
     private static AtomUICliError CreateUnknownCommandError(string commandName)

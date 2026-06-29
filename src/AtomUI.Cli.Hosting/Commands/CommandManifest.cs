@@ -133,14 +133,14 @@ public sealed class CommandManifestCatalog
                 10),
             Knowledge(
                 "info",
-                "Show metadata for an AtomUI control.",
+                "Show AtomUI control information.",
                 "dotnet atomui info <control> [options]",
                 ["dotnet atomui info Button", "dotnet atomui info DataGrid --format json"],
                 20,
                 arguments: [new CommandArgumentHelp("control", "Control name, for example Button or DataGrid.")],
                 options:
                 [
-                    new CommandOptionHelp("--include", "Include metadata sections.", "section"),
+                    new CommandOptionHelp("--include", "Include information sections.", "section"),
                     new CommandOptionHelp("--strict", "Disable fuzzy matching.")
                 ]),
             Knowledge(

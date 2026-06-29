@@ -65,7 +65,7 @@ Raw args
 | --- | --- |
 | `CommandManifest` | 命令轻量描述，包含名称、所属模块、额外 required modules、分组、支持格式、读写属性、项目要求和帮助元数据。 |
 | `CommandManifestCatalog` | 所有命令的轻量索引，来自显式代码或 source generator，不依赖模块实例。 |
-| `CommandPreParser` | 解析 `--version`、`--help`、`--format` 和命令名。 |
+| `CommandPreParser` | 解析 `--version`、`--help`、`--format`、`--markdown` 和命令名。 |
 | `ModuleActivationPlanner` | 根据命令所属模块、命令级 required modules 和硬模块依赖计算本次运行的 active modules。 |
 | `ModuleActivationPlan` | 冻结后的激活集合，作为 `ModuleHost` 的启用模块输入。 |
 

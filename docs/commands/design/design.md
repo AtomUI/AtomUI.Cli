@@ -2,7 +2,7 @@
 
 ## 1. 命令定位
 
-`design.md` 输出 AtomUI 设计语言、Token 使用规则、组件设计原则和 Agent 编码约束。它用于让 Agent 在生成 UI 代码前获得稳定设计上下文。
+`design.md` 输出 AtomUI 设计语言、Token 使用规则、控件设计原则和 Agent 编码约束。它用于让 Agent 在生成 UI 代码前获得稳定设计上下文。
 
 ## 2. 所属模块与注册
 

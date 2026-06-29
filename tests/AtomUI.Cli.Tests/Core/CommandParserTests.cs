@@ -79,6 +79,23 @@ public sealed class CommandParserTests
         Assert.Equal(["info"], result.CommandArguments);
     }
 
+    [Theory]
+    [InlineData("--markdown", "list")]
+    [InlineData("list", "--markdown")]
+    public void ParseBindsMarkdownShortcutAsGlobalFormat(params string[] args)
+    {
+        var descriptor = CreateDescriptor("list", OutputFormat.Markdown);
+        var catalog = CliCommandDescriptorCatalog.Create([descriptor]);
+        var parser = new CliCommandParser();
+
+        var result = parser.Parse(args, catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(descriptor, result.Descriptor);
+        Assert.Equal(OutputFormat.Markdown, result.GlobalOptions.Format);
+        Assert.Empty(result.CommandArguments);
+    }
+
     private static CliCommandDescriptor CreateDescriptor(string name, params OutputFormat[] additionalFormats)
     {
         return CliCommandDescriptor.Create<NoopCommandOptions, NoopCommandHandler>(

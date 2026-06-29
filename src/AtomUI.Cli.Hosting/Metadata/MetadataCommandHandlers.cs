@@ -209,16 +209,539 @@ public sealed class InfoCommandHandler(MetadataQueryService metadata) : IAtomUIC
             return ValueTask.FromResult(MetadataErrors.MissingRequired("Control name is required."));
         }
 
+        if (!InfoSectionSelection.TryParse(options.Include, out var sections, out var invalidSection))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Unknown info include section '{invalidSection}'. Supported sections: {InfoSectionSelection.SupportedSectionList}."));
+        }
+
         var control = metadata.FindControl(options.Control, options.Global.Product);
         if (control is null)
         {
             return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.ControlNotFound, $"Control '{options.Control}' was not found."));
         }
 
-        var tokens = metadata.FindTokens(control.Name);
-        var demos = metadata.FindDemos(control.Name);
-        var text = $"{control.Name}: {control.Description}{Environment.NewLine}Package: {control.PackageId}{Environment.NewLine}Namespace: {control.Namespace}{Environment.NewLine}Tokens: {tokens.Count}{Environment.NewLine}Demos: {demos.Count}";
-        return ValueTask.FromResult(AtomUICliResult.Success(text));
+        var payload = metadata.CreateInfoPayload(control, options);
+        object resultPayload = options.Global.Format switch
+        {
+            OutputFormat.Json => payload,
+            OutputFormat.Markdown => InfoOutputRenderer.RenderMarkdown(payload, options.Global.Detail, sections),
+            _ => InfoOutputRenderer.RenderText(payload, options.Global.Detail, sections)
+        };
+
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
+    }
+}
+
+internal readonly record struct InfoSectionSelection(
+    bool Usage,
+    bool Api,
+    bool Template,
+    bool States,
+    bool Tokens,
+    bool Demos,
+    bool Diagnostics,
+    bool Related)
+{
+    public const string SupportedSectionList = "identity, usage, api, events, methods, template, states, tokens, demos, diagnostics, related, all";
+
+    private static readonly InfoSectionSelection All = new(
+        Usage: true,
+        Api: true,
+        Template: true,
+        States: true,
+        Tokens: true,
+        Demos: true,
+        Diagnostics: true,
+        Related: true);
+
+    public static bool TryParse(string? value, out InfoSectionSelection selection, out string? invalidSection)
+    {
+        invalidSection = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            selection = All;
+            return true;
+        }
+
+        var requested = value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
+        if (requested.Length == 0)
+        {
+            selection = All;
+            return true;
+        }
+
+        if (requested.Any(item => item.Equals("all", StringComparison.OrdinalIgnoreCase)))
+        {
+            selection = All;
+            return true;
+        }
+
+        var usage = false;
+        var api = false;
+        var template = false;
+        var states = false;
+        var tokens = false;
+        var demos = false;
+        var diagnostics = false;
+        var related = false;
+
+        foreach (var section in requested)
+        {
+            switch (section.ToLowerInvariant())
+            {
+                case "identity":
+                    break;
+                case "usage":
+                    usage = true;
+                    break;
+                case "api":
+                case "events":
+                case "methods":
+                    api = true;
+                    break;
+                case "template":
+                    template = true;
+                    break;
+                case "states":
+                    states = true;
+                    break;
+                case "tokens":
+                    tokens = true;
+                    break;
+                case "demos":
+                    demos = true;
+                    break;
+                case "diagnostics":
+                    diagnostics = true;
+                    break;
+                case "related":
+                    related = true;
+                    break;
+                default:
+                    selection = default;
+                    invalidSection = section;
+                    return false;
+            }
+        }
+
+        selection = new InfoSectionSelection(usage, api, template, states, tokens, demos, diagnostics, related);
+        return true;
+    }
+}
+
+internal static class InfoOutputRenderer
+{
+    public static string RenderText(InfoCommandPayload payload, bool includeDetail, InfoSectionSelection sections)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"{payload.Control.Name} - {payload.Control.CategoryName}");
+        builder.AppendLine($"Package: {payload.Control.PackageId}");
+        builder.AppendLine($"Namespace: {payload.Type.Namespace}");
+        builder.AppendLine($"Base type: {payload.Type.BaseType}");
+        builder.AppendLine($"Product: {payload.Control.ProductId}");
+        builder.AppendLine($"Gallery: {payload.Control.GalleryRoute}");
+        builder.AppendLine($"Status: {payload.Control.Status}");
+        builder.AppendLine();
+        builder.AppendLine(payload.Description.Subtitle);
+
+        if (sections.Usage && !string.IsNullOrWhiteSpace(payload.Usage.XamlSnippet))
+        {
+            builder.AppendLine();
+            builder.AppendLine("Usage:");
+            builder.AppendLine($"  {payload.Usage.XamlSnippet}");
+        }
+
+        if (sections.Api)
+        {
+            AppendTextApi(builder, payload, includeDetail);
+        }
+
+        if (sections.Template)
+        {
+            AppendTextTemplate(builder, payload, includeDetail);
+        }
+
+        if (sections.States)
+        {
+            AppendTextStates(builder, payload, includeDetail);
+        }
+
+        if (sections.Tokens)
+        {
+            AppendTextTokens(builder, payload, includeDetail);
+        }
+
+        if (sections.Demos)
+        {
+            AppendTextDemos(builder, payload, includeDetail);
+        }
+
+        if (sections.Diagnostics)
+        {
+            AppendTextDiagnostics(builder, payload);
+        }
+
+        if (sections.Related)
+        {
+            AppendTextRelatedCommands(builder, payload);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    public static string RenderMarkdown(InfoCommandPayload payload, bool includeDetail, InfoSectionSelection sections)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"# {payload.Control.Name}");
+        builder.AppendLine();
+        builder.AppendLine("| Field | Value |");
+        builder.AppendLine("| --- | --- |");
+        builder.AppendLine($"| Category | {payload.Control.CategoryName} |");
+        builder.AppendLine($"| Package | {payload.Control.PackageId} |");
+        builder.AppendLine($"| Namespace | {payload.Type.Namespace} |");
+        builder.AppendLine($"| Base type | {payload.Type.BaseType} |");
+        builder.AppendLine($"| Product | {payload.Control.ProductId} |");
+        builder.AppendLine($"| Gallery | {payload.Control.GalleryRoute} |");
+        builder.AppendLine($"| Status | {payload.Control.Status} |");
+        builder.AppendLine();
+        builder.AppendLine(payload.Description.Subtitle);
+
+        if (sections.Usage && !string.IsNullOrWhiteSpace(payload.Usage.XamlSnippet))
+        {
+            builder.AppendLine();
+            builder.AppendLine("## Usage");
+            builder.AppendLine();
+            builder.AppendLine("```xml");
+            builder.AppendLine(payload.Usage.XamlSnippet);
+            builder.AppendLine("```");
+        }
+
+        if (sections.Api)
+        {
+            AppendMarkdownApi(builder, payload, includeDetail);
+        }
+
+        if (sections.Template)
+        {
+            AppendMarkdownTemplate(builder, payload, includeDetail);
+        }
+
+        if (sections.States)
+        {
+            AppendMarkdownStates(builder, payload, includeDetail);
+        }
+
+        if (sections.Tokens)
+        {
+            AppendMarkdownTokens(builder, payload, includeDetail);
+        }
+
+        if (sections.Demos)
+        {
+            AppendMarkdownDemos(builder, payload, includeDetail);
+        }
+
+        if (sections.Diagnostics)
+        {
+            AppendMarkdownDiagnostics(builder, payload);
+        }
+
+        if (sections.Related)
+        {
+            AppendMarkdownRelatedCommands(builder, payload);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static void AppendTextApi(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var api = SelectApi(payload, includeDetail);
+        if (api.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("API:");
+        foreach (var item in api)
+        {
+            builder.AppendLine(
+                $"  {item.Name.PadRight(16)} {item.Type.PadRight(22)} {item.DefaultValue.PadRight(8)} {ToDisplayKind(item.PropertyKind).PadRight(7)} {item.Description}");
+        }
+    }
+
+    private static void AppendTextTemplate(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var parts = SelectTemplateParts(payload, includeDetail);
+        if (parts.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Template parts:");
+        foreach (var part in parts)
+        {
+            builder.AppendLine($"  {part.Name.PadRight(22)} {part.Type}");
+        }
+    }
+
+    private static void AppendTextStates(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var states = SelectStates(payload, includeDetail);
+        if (states.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("States:");
+        builder.AppendLine($"  {string.Join(", ", states.Select(state => state.Name))}");
+    }
+
+    private static void AppendTextTokens(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var tokens = SelectTokens(payload, includeDetail);
+        if (tokens.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Tokens:");
+        foreach (var token in tokens)
+        {
+            builder.AppendLine($"  {token.Name.PadRight(14)} {ToDisplayKind(token.Scope).PadRight(7)} {ToDisplayKind(token.Status)}");
+        }
+    }
+
+    private static void AppendTextDemos(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var demos = SelectDemos(payload, includeDetail);
+        if (demos.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Demos:");
+        foreach (var demo in demos)
+        {
+            builder.AppendLine($"  {demo.Name.PadRight(12)} {demo.Title}");
+        }
+    }
+
+    private static void AppendTextDiagnostics(StringBuilder builder, InfoCommandPayload payload)
+    {
+        if (payload.Diagnostics.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Diagnostics:");
+        foreach (var diagnostic in payload.Diagnostics)
+        {
+            builder.AppendLine($"  {diagnostic.Code}: {diagnostic.Message}");
+        }
+    }
+
+    private static void AppendTextRelatedCommands(StringBuilder builder, InfoCommandPayload payload)
+    {
+        if (payload.RelatedCommands.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Related:");
+        foreach (var command in payload.RelatedCommands)
+        {
+            builder.AppendLine($"  {command.Command}");
+        }
+    }
+
+    private static void AppendMarkdownApi(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var api = SelectApi(payload, includeDetail);
+        if (api.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## API");
+        builder.AppendLine();
+        builder.AppendLine("| Property | Type | Default | Kind | Description |");
+        builder.AppendLine("| --- | --- | --- | --- | --- |");
+        foreach (var item in api)
+        {
+            builder.AppendLine($"| {item.Name} | {item.Type} | {item.DefaultValue} | {ToDisplayKind(item.PropertyKind)} | {item.Description} |");
+        }
+    }
+
+    private static void AppendMarkdownTemplate(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var parts = SelectTemplateParts(payload, includeDetail);
+        if (parts.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Template Parts");
+        builder.AppendLine();
+        builder.AppendLine("| Name | Type | Required | Description |");
+        builder.AppendLine("| --- | --- | --- | --- |");
+        foreach (var part in parts)
+        {
+            builder.AppendLine($"| {part.Name} | {part.Type} | {FormatBool(part.IsRequired)} | {part.Description} |");
+        }
+    }
+
+    private static void AppendMarkdownStates(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var states = SelectStates(payload, includeDetail);
+        if (states.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## States");
+        builder.AppendLine();
+        builder.AppendLine("| Name | Kind | Description |");
+        builder.AppendLine("| --- | --- | --- |");
+        foreach (var state in states)
+        {
+            builder.AppendLine($"| {state.Name} | {state.Kind} | {state.Description} |");
+        }
+    }
+
+    private static void AppendMarkdownTokens(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var tokens = SelectTokens(payload, includeDetail);
+        if (tokens.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Tokens");
+        builder.AppendLine();
+        builder.AppendLine("| Name | Scope | Status | Description |");
+        builder.AppendLine("| --- | --- | --- | --- |");
+        foreach (var token in tokens)
+        {
+            builder.AppendLine($"| {token.Name} | {token.Scope} | {token.Status} | {token.Description} |");
+        }
+    }
+
+    private static void AppendMarkdownDemos(StringBuilder builder, InfoCommandPayload payload, bool includeDetail)
+    {
+        var demos = SelectDemos(payload, includeDetail);
+        if (demos.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Demos");
+        builder.AppendLine();
+        builder.AppendLine("| Name | Title | Description |");
+        builder.AppendLine("| --- | --- | --- |");
+        foreach (var demo in demos)
+        {
+            builder.AppendLine($"| {demo.Name} | {demo.Title} | {demo.Description} |");
+        }
+    }
+
+    private static void AppendMarkdownDiagnostics(StringBuilder builder, InfoCommandPayload payload)
+    {
+        if (payload.Diagnostics.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Diagnostics");
+        builder.AppendLine();
+        builder.AppendLine("| Code | Severity | Message |");
+        builder.AppendLine("| --- | --- | --- |");
+        foreach (var diagnostic in payload.Diagnostics)
+        {
+            builder.AppendLine($"| {diagnostic.Code} | {diagnostic.Severity} | {diagnostic.Message} |");
+        }
+    }
+
+    private static void AppendMarkdownRelatedCommands(StringBuilder builder, InfoCommandPayload payload)
+    {
+        if (payload.RelatedCommands.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("## Related Commands");
+        builder.AppendLine();
+        builder.AppendLine("```bash");
+        foreach (var command in payload.RelatedCommands)
+        {
+            builder.AppendLine(command.Command);
+        }
+
+        builder.AppendLine("```");
+    }
+
+    private static IReadOnlyList<InfoApiMemberPayload> SelectApi(InfoCommandPayload payload, bool includeDetail)
+    {
+        return includeDetail
+            ? payload.Api
+            : payload.Api.Where(item => item.IsCurated).Take(8).ToArray();
+    }
+
+    private static IReadOnlyList<InfoTemplatePartPayload> SelectTemplateParts(InfoCommandPayload payload, bool includeDetail)
+    {
+        return includeDetail
+            ? payload.Template.Parts
+            : payload.Template.Parts.Take(5).ToArray();
+    }
+
+    private static IReadOnlyList<InfoControlStatePayload> SelectStates(InfoCommandPayload payload, bool includeDetail)
+    {
+        return includeDetail
+            ? payload.States
+            : payload.States.Take(8).ToArray();
+    }
+
+    private static IReadOnlyList<InfoTokenSummaryPayload> SelectTokens(InfoCommandPayload payload, bool includeDetail)
+    {
+        return includeDetail
+            ? payload.Tokens
+            : payload.Tokens.Take(5).ToArray();
+    }
+
+    private static IReadOnlyList<InfoDemoSummaryPayload> SelectDemos(InfoCommandPayload payload, bool includeDetail)
+    {
+        return includeDetail
+            ? payload.Demos
+            : payload.Demos.Take(5).ToArray();
+    }
+
+    private static string ToDisplayKind(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? value
+            : char.ToUpperInvariant(value[0]) + value[1..];
+    }
+
+    private static string FormatBool(bool value)
+    {
+        return value ? "yes" : "no";
     }
 }
 
@@ -374,6 +897,18 @@ internal static class MetadataErrors
             message,
             null,
             "execute",
+            null,
+            null));
+    }
+
+    public static AtomUICliResult InvalidValue(string message)
+    {
+        return AtomUICliResult.Failure(new AtomUICliError(
+            AtomUICliErrorCodes.ArgumentInvalidValue,
+            AtomUICliSeverity.Error,
+            message,
+            null,
+            "parse",
             null,
             null));
     }

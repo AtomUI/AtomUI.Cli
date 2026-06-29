@@ -50,6 +50,7 @@ dotnet atomui help info --format markdown
 | --- | --- | --- | --- | --- |
 | `command` | string | null | 不存在返回 `ATOMUICLI_ARG003` | 目标命令名，例如 `info`、`doctor`。 |
 | `--format` | global enum | `text` | 非法值返回 `ATOMUICLI_ARG002` | 支持 `text`、`json`、`markdown`。 |
+| `--markdown` | global bool | false | 无 | `--format markdown` 的快捷写法。 |
 | `--lang` | global enum | `zh` | 非法值返回 `ATOMUICLI_ARG002` | 帮助文案语言。 |
 | `--detail` | global bool | false | 无 | 首页输出全部命令；默认首页突出常用命令和分组摘要。 |
 
@@ -201,7 +202,7 @@ json 首页输出 `HelpHomePayload`，不能输出纯字符串数组，并且必
 ```text
 info
 
-Show metadata for an AtomUI control.
+Show AtomUI control information.
 
 Usage:
   dotnet atomui info <control> [options]
@@ -210,9 +211,10 @@ Arguments:
   <control>            Control name, for example Button or DataGrid.
 
 Options:
-  --include <section>  Include metadata sections.
+  --include <section>  Include information sections.
   --strict             Disable fuzzy matching.
   --format <format>    text, json, markdown.
+  --markdown           Shortcut for --format markdown.
 
 Examples:
   dotnet atomui info Button

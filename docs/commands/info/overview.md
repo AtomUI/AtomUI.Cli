@@ -2,7 +2,9 @@
 
 ## 定位
 
-`info` 是 P0 只读知识查询命令，用于查询单个控件的 API、注册要求、包归属、XAML 命名空间、Token、semantic parts 和示例索引。
+`info` 是 P0 只读知识查询命令，用于查询单个 AtomUI 控件的契约摘要，包括控件身份、包归属、XAML 使用方式、公开 API、模板部件、视觉状态、控件 Token、示例索引和诊断提示。
+
+默认输出纯文本。显式传入 `--format markdown` 时输出 Markdown，显式传入 `--format json` 时输出结构化 JSON。
 
 ## 所属模块
 
@@ -12,8 +14,9 @@
 
 ```bash
 dotnet atomui info Button
+dotnet atomui info Button --format markdown
+dotnet atomui info Button --format json
 dotnet atomui info DataGrid --product datagrid --detail
-dotnet atomui info Button --include properties,events,tokens --format json
 ```
 
 ## 参数与选项
@@ -21,64 +24,49 @@ dotnet atomui info Button --include properties,events,tokens --format json
 | 参数或选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `control` | 必填 | 控件名称，支持大小写不敏感匹配。 |
-| `--include <parts>` | `summary,api,registration` | 逗号分隔，可选 `summary`、`api`、`properties`、`events`、`methods`、`tokens`、`semantic`、`demos`、`registration`。 |
+| `--include <sections>` | 全量展示 | 逗号分隔，支持 `identity`、`usage`、`api`、`events`、`methods`、`template`、`states`、`tokens`、`demos`、`related`、`diagnostics`、`all`。 |
 | `--strict` | `false` | 要求控件名称精确匹配。 |
 | `--product <id>` | 全产品 | 限定产品范围。 |
-| `--detail` | `false` | 输出默认值、类型约束、废弃信息和来源版本。 |
+| `--detail` | `false` | 输出更完整的 API、模板、状态、Token 和 demo 信息。 |
 | `--format <text|json|markdown>` | `text` | 输出格式。 |
-
-## 输入
-
-- 目标版本 metadata 快照。
-- 产品清单和包清单。
-- 可选商业数据根。商业数据不可用时，只输出可公开的包级提示。
 
 ## 输出
 
-json 输出示例：
+纯文本输出用于终端阅读：
 
-```json
-{
-  "name": "Button",
-  "displayName": "按钮",
-  "productId": "desktop",
-  "packageId": "AtomUI.Desktop.Controls",
-  "namespace": "AtomUI.Desktop.Controls",
-  "xamlNamespace": "https://atomui.net",
-  "registration": {
-    "required": true,
-    "methods": ["UseDesktopControls"]
-  },
-  "api": {
-    "properties": [],
-    "events": [],
-    "methods": []
-  }
-}
+```text
+Button - General
+Package: AtomUI.Desktop.Controls
+Namespace: AtomUI.Desktop.Controls
+Base type: Avalonia.Controls.Button
+Product: desktop
+Gallery: General/Button
+Status: Stable
+
+Usage:
+  <atom:Button ButtonType="Primary" Content="Save" />
 ```
 
-text 输出优先展示安装、注册和常用 API。markdown 输出用于拼接文档。
+Markdown 输出用于复制到文档或 Agent 上下文。JSON 输出使用 `InfoCommandPayload`，供 CLI、MCP 和工具链结构化消费。
 
 ## Handler 与服务依赖
 
 | 类型 | 生命周期 | 说明 |
 | --- | --- | --- |
-| `InfoCommandOptions` | Scoped value | 控件名、include 集合和全局选项。 |
-| `InfoCommandHandler` | Transient | 控件名称解析和输出映射。 |
-| `IControlQueryService` | Singleton | 控件详情查询。 |
-| `IPackageQueryService` | Singleton | 包、依赖和注册关系查询。 |
-| `ISemanticPartQueryService` | Singleton | semantic parts 查询。 |
-| `ITokenQueryService` | Singleton | Token 摘要查询。 |
-| `IOutputWriter` | Scoped | 输出格式化。 |
+| `InfoCommandOptions` | Scoped value | 控件名、include 字符串和全局选项。 |
+| `InfoCommandHandler` | Transient | 控件名称解析、payload 构建和输出映射。 |
+| `MetadataQueryService` | Singleton | 基于静态快照查询控件信息。 |
+| `InfoOutputRenderer` | Static | 输出 text 和 Markdown。 |
+| `IOutputWriter` | Scoped | 输出格式化后的结果。 |
 
 ## 执行流程
 
 1. 校验 `control` 非空。
-2. 解析目标版本和产品过滤。
-3. 使用 `IControlQueryService` 执行精确匹配或模糊匹配。
-4. 控件唯一命中时装载所需 include 数据。
-5. 多个候选命中时返回候选列表和修正建议。
-6. 按输出格式写入 stdout。
+2. 根据产品过滤解析控件。
+3. 使用 `MetadataQueryService` 构建 `InfoCommandPayload`。
+4. `--format json` 直接输出 payload。
+5. `--format markdown` 使用 Markdown renderer。
+6. 默认使用纯文本 renderer。
 
 ## 错误码与退出码
 
@@ -87,7 +75,7 @@ text 输出优先展示安装、注册和常用 API。markdown 输出用于拼�
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
 | `ATOMUICLI_ARG001` | `2` | 缺少 `control`。 |
-| `ATOMUICLI_ARG002` | `2` | `--include` 包含未知部分。 |
+| `ATOMUICLI_ARG002` | `2` | `--include` 或 `--format` 包含未知值。 |
 | `ATOMUICLI_CTRL001` | `3` | 控件不存在。 |
 | `ATOMUICLI_CTRL002` | `3` | 控件名存在歧义。 |
 | `ATOMUICLI_DATA001` | `4` | 元数据快照不可用。 |
@@ -95,16 +83,9 @@ text 输出优先展示安装、注册和常用 API。markdown 输出用于拼�
 ## AOT 约束
 
 - 控件查询来自显式 metadata 快照。
-- include 映射使用枚举或 source generated lookup。
+- payload 使用显式 DTO 和 `IAtomUICliJsonPayload`。
 - 不从控件运行时类型反射 API。
-
-## 测试点
-
-- 精确控件名返回完整 summary。
-- 大小写不敏感匹配可用。
-- `--strict` 拒绝模糊匹配。
-- `--include tokens,semantic` 只输出请求部分。
-- 不存在控件返回建议和 `ATOMUICLI_CTRL001`。
+- 不在运行时扫描源码或 XAML。
 
 ## 相关文档
 

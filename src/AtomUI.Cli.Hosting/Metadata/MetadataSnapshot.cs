@@ -214,7 +214,7 @@ public sealed record MetadataCatalog(
             productId,
             packageId,
             "AtomUI.Desktop.Controls",
-            $"Components/{category.RouteSegment}/{name}",
+            $"{category.RouteSegment}/{name}",
             description,
             category.Id,
             category.Name,

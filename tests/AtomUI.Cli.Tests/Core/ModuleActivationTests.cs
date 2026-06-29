@@ -73,4 +73,19 @@ public sealed class ModuleActivationTests
         Assert.NotNull(result.Manifest);
         Assert.Equal("help", result.Manifest.Name);
     }
+
+    [Theory]
+    [InlineData("--markdown", "list")]
+    [InlineData("list", "--markdown")]
+    public void PreParserAcceptsMarkdownShortcutAsGlobalFormat(params string[] args)
+    {
+        var catalog = CommandManifestCatalog.CreateBuiltIn();
+        var parser = new CommandPreParser();
+
+        var result = parser.Parse(args, catalog);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal("list", result.Manifest.Name);
+    }
 }

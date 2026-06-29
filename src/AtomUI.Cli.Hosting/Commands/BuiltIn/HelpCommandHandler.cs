@@ -10,6 +10,7 @@ public sealed class HelpCommandHandler(CommandManifestCatalog commandManifests) 
     private static readonly CommandOptionHelp[] GlobalOptions =
     [
         new CommandOptionHelp("--format", "Output format.", "text|json|markdown"),
+        new CommandOptionHelp("--markdown", "Shortcut for --format markdown."),
         new CommandOptionHelp("--lang", "Output language.", "zh|en"),
         new CommandOptionHelp("--target-version", "AtomUI target version.", "version"),
         new CommandOptionHelp("--data-root", "Additional metadata data root.", "path"),

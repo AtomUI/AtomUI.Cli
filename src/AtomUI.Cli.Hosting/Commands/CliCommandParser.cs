@@ -123,6 +123,10 @@ public sealed class CliCommandParser
                     global = global with { Format = format };
                 }
                 return true;
+            case "--markdown":
+                global = global with { Format = OutputFormat.Markdown };
+                index++;
+                return true;
             case "--lang":
                 if (!TryReadValue(args, ref index, out var lang))
                 {

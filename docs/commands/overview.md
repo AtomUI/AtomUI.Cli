@@ -36,6 +36,7 @@
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--format <text|json|markdown>` | `text` | 输出格式。Agent 和脚本场景应使用 `json`。 |
+| `--markdown` | `false` | `--format markdown` 的快捷写法。 |
 | `--target-version <version>` | metadata 默认版本 | 查询或诊断目标版本。 |
 | `--product <id>` | 全产品 | 产品过滤，例如 `desktop`、`datagrid`、`charts`。 |
 | `--lang <zh|en>` | `zh` | 输出语言。 |

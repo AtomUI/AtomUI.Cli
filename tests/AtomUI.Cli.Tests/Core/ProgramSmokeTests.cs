@@ -67,7 +67,7 @@ public sealed class ProgramSmokeTests
         Assert.Contains("Global options:", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("More:", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("info <control>", result.Stdout, StringComparison.Ordinal);
-        Assert.Contains("Show metadata", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Show AtomUI control information", result.Stdout, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class ProgramSmokeTests
         Assert.True(result.Exited);
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("info", result.Stdout, StringComparison.Ordinal);
-        Assert.Contains("Show metadata", result.Stdout, StringComparison.Ordinal);
+        Assert.Contains("Show AtomUI control information", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("Usage:", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("dotnet atomui info <control> [options]", result.Stdout, StringComparison.Ordinal);
         Assert.Contains("Arguments:", result.Stdout, StringComparison.Ordinal);

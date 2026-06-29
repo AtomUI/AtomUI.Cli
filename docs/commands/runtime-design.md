@@ -135,6 +135,7 @@ public sealed record GlobalCliOptions(
 绑定规则：
 
 - `--format` 只接受 `text`、`json`、`markdown`。
+- `--markdown` 是 `--format markdown` 的快捷写法，可放在命令名前或命令后。
 - `--target-version` 是 AtomUI 目标版本。
 - `--version` 保留给 CLI 工具版本。
 - `--lang` 首期支持 `zh`、`en`。
