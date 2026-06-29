@@ -12,11 +12,13 @@
     <Company>Qinware Technologies Co., Ltd.</Company>
     <Copyright>Copyright (c) 2018-2026 Qinware Technologies Co., Ltd. All rights reserved.</Copyright>
     <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>README.nuget.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)../README.md" Visible="false" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)../README.zh-CN.md" Visible="false" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)../README.nuget.md" Visible="false" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)../LICENSE" Visible="false" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)../NOTICE" Visible="false" Pack="true" PackagePath="/" />
   </ItemGroup>
