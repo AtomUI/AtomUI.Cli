@@ -2,7 +2,9 @@
 
 ## 定位
 
-`doc` 是 P0 只读知识查询命令，用于输出单个控件的完整 Markdown 文档。它面向开发者阅读、Agent 上下文注入和离线文档生成。
+`doc` 是 P0 只读知识查询命令，用于输出单个控件或主题的完整文档视图。它面向控件使用者、维护者、主题维护者、Agent 上下文注入和离线文档生成。
+
+对控件目标，`doc` 必须覆盖使用说明、API surface、事件、protected 扩展点、逻辑结构、ControlTheme、Token、semantic parts、Gallery 示例和源码索引。所有控件统一遵守该标准，不能只对某个控件做特殊输出。
 
 ## 所属模块
 
@@ -13,6 +15,11 @@
 ```bash
 dotnet atomui doc Button
 dotnet atomui doc Button --section api
+dotnet atomui doc Button --section events
+dotnet atomui doc Button --section logic
+dotnet atomui doc Button --section theme
+dotnet atomui doc Button --section examples --examples all
+dotnet atomui doc Button --example button-loading
 dotnet atomui doc DataGrid --product datagrid --format markdown
 dotnet atomui doc Button --format json
 ```
@@ -22,16 +29,19 @@ dotnet atomui doc Button --format json
 | 参数或选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `control` | 必填 | 控件名称。 |
-| `--section <name>` | `all` | 可选 `all`、`overview`、`usage`、`api`、`tokens`、`semantic`、`demos`、`changelog`。 |
+| `--section <name>` | `all` | 可选 `all`、`overview`、`install`、`usage`、`scenarios`、`examples`、`api`、`properties`、`methods`、`events`、`logic`、`theme`、`tokens`、`semantic`、`demos`、`changelog`、`source`。 |
+| `--example <sourceKey>` | null | 只输出指定 Gallery 稳定示例。 |
+| `--examples <mode>` | `recommended` | 可选 `recommended`、`all`、`basic`、`state`、`theme`、`integration`、`advanced`。 |
 | `--strict` | `false` | 要求控件名称精确匹配。 |
 | `--product <id>` | 全产品 | 限定产品范围。 |
 | `--format <text|json|markdown>` | `markdown` | 默认输出 Markdown。 |
 
 ## 输入
 
-- 控件 metadata。
-- Demo 索引和示例片段。
-- Token、semantic parts 和控件变更记录。
+- 控件 metadata 和 documentation snapshot。
+- Gallery 示例、SourceKey 和示例片段。
+- API surface、事件、protected 扩展点、逻辑结构和 ControlTheme。
+- Token、semantic parts、源码索引和控件变更记录。
 
 ## 输出
 
@@ -45,6 +55,10 @@ markdown 输出结构：
 ## 基础用法
 
 ## API
+
+## 逻辑结构
+
+## ControlTheme 结构
 
 ## Token
 
@@ -63,19 +77,16 @@ json 输出返回结构化文档区块，便于 Agent 自行选择上下文。
 | --- | --- | --- |
 | `DocCommandOptions` | Scoped value | 控件名、section 和全局选项。 |
 | `DocCommandHandler` | Transient | 文档聚合和格式输出。 |
-| `IControlQueryService` | Singleton | 控件 summary 和 API。 |
-| `IDemoQueryService` | Singleton | 示例索引和代码块。 |
-| `ITokenQueryService` | Singleton | Token 文档块。 |
-| `ISemanticPartQueryService` | Singleton | semantic 文档块。 |
-| `IChangelogQueryService` | Singleton | 控件变更块。 |
+| `IDocumentationQueryService` | Singleton | 控件完整文档查询，包含 API、事件、逻辑结构、ControlTheme、示例、Token 和 semantic parts。 |
+| `ICommandSuggestionService` | Singleton | not found 和 ambiguous 分支建议。 |
 
 ## 执行流程
 
 1. 校验 `control` 和 `--section`。
 2. 解析目标版本和产品过滤。
-3. 查询控件详情。
-4. 按 section 聚合文档块。
-5. 过滤空区块，保留稳定标题顺序。
+3. 查询 documentation snapshot。
+4. 按 section、style、examples 和 exampleKey 选择文档块。
+5. 保留结构化 control payload 和稳定标题顺序。
 6. 输出 markdown、text 或 json。
 
 ## 错误码与退出码
@@ -87,13 +98,16 @@ json 输出返回结构化文档区块，便于 Agent 自行选择上下文。
 | `ATOMUICLI_ARG001` | `2` | 缺少 `control`。 |
 | `ATOMUICLI_ARG002` | `2` | `--section` 非法。 |
 | `ATOMUICLI_CTRL001` | `3` | 控件不存在。 |
+| `ATOMUICLI_CTRL003` | `3` | 示例 SourceKey 不存在。 |
 | `ATOMUICLI_DATA001` | `4` | 文档数据不可用。 |
+| `ATOMUICLI_DATA003` | `4` | 快照内部引用缺失或控件文档缺少必备结构。 |
 
 ## AOT 约束
 
 - Markdown 渲染使用显式 renderer，不通过模板运行时编译。
 - JSON 文档 DTO 纳入 source generated context。
 - 不从外部程序集动态读取 XML doc。
+- 运行时不读取 AtomUI 源码、Gallery、ControlTheme 或 Git。
 
 ## 测试点
 

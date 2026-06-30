@@ -745,28 +745,453 @@ internal static class InfoOutputRenderer
     }
 }
 
-public sealed class DocCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<DocCommandOptions>
+public sealed class DocCommandHandler(
+    MetadataQueryService metadata,
+    DocumentationQueryService documents,
+    DocumentSectionSelector sectionSelector,
+    DocOutputRenderer renderer) : IAtomUICliCommandHandler<DocCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(DocCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
-        var target = options.Topic ?? options.Target;
-        if (string.IsNullOrWhiteSpace(target))
+        if (!string.IsNullOrWhiteSpace(options.InvalidSection))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Unknown doc section '{options.InvalidSection}'. Supported sections: all, overview, install, usage, scenarios, examples, api, properties, methods, events, logic, theme, tokens, semantic, demos, changelog, source."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.InvalidStyle))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Unknown doc style '{options.InvalidStyle}'. Supported styles: full, summary, agent."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.InvalidExamples))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Unknown doc examples mode '{options.InvalidExamples}'. Supported modes: recommended, all, basic, state, theme, integration, advanced."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Target) && !string.IsNullOrWhiteSpace(options.Topic))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue("Document target and --topic cannot be used together."));
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Target) && string.IsNullOrWhiteSpace(options.Topic))
         {
             return ValueTask.FromResult(MetadataErrors.MissingRequired("Document target or --topic is required."));
         }
 
-        var kind = options.Topic is null ? "control" : "topic";
-        var document = metadata.FindDocument(kind, target);
-        if (document is null)
+        if (!string.IsNullOrWhiteSpace(options.Global.Product) && metadata.FindProduct(options.Global.Product) is null)
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.DataReferenceMissing, $"Document '{target}' was not found."));
+            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.PackageNotFound, $"Product '{options.Global.Product}' was not found."));
         }
 
-        return ValueTask.FromResult(AtomUICliResult.Success(document.Markdown));
+        var targetKind = string.IsNullOrWhiteSpace(options.Topic) ? DocumentTargetKind.Control : DocumentTargetKind.Topic;
+        var target = options.Topic ?? options.Target!;
+        var query = new DocumentQuery(
+            targetKind,
+            target,
+            options.Global.TargetVersion ?? "6.0",
+            options.Global.Language,
+            options.Global.Product,
+            options.Section,
+            options.Examples,
+            options.ExampleKey,
+            options.Strict);
+        var queryResult = documents.Query(query);
+        if (queryResult.Status != DocumentQueryStatus.Found)
+        {
+            return ValueTask.FromResult(MetadataErrors.NotFound(
+                queryResult.ErrorCode ?? AtomUICliErrorCodes.DataUnavailable,
+                queryResult.ErrorMessage ?? $"Document '{target}' was not found."));
+        }
+
+        var payload = BuildPayload(options, queryResult);
+        var effectiveFormat = options.FormatSpecified ? options.Global.Format : OutputFormat.Markdown;
+        object resultPayload = effectiveFormat switch
+        {
+            OutputFormat.Json => payload,
+            OutputFormat.Text => renderer.RenderText(payload, options.Global.Detail),
+            _ => renderer.RenderMarkdown(payload, options.Global.Detail)
+        };
+
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
+    }
+
+    private DocCommandPayload BuildPayload(DocCommandOptions options, DocumentQueryResult queryResult)
+    {
+        if (queryResult.Control is not null)
+        {
+            var control = queryResult.Control;
+            var effectiveSection = string.IsNullOrWhiteSpace(options.ExampleKey)
+                ? options.Section
+                : DocumentSection.Examples;
+            var sections = sectionSelector.Select(control.Sections, effectiveSection, options.Style);
+            return new DocCommandPayload(
+                "1.0",
+                "doc",
+                control.TargetVersion,
+                "control",
+                control.Name,
+                control.DisplayName,
+                control.Language,
+                control.ProductId,
+                control.PackageId,
+                control.IsCommercial,
+                options.Section,
+                options.Style,
+                options.Examples,
+                options.ExampleKey,
+                CreateSource(control.Source, control.SnapshotSchemaVersion, control.SnapshotId),
+                CreateControl(control, options),
+                sections.Select(section => CreateSection(section, SelectExamples(control.Examples, options))).ToArray(),
+                control.Related.Select(CreateRelated).ToArray(),
+                control.Warnings.Select(CreateWarning).ToArray(),
+                queryResult.Suggestions.Select(CreateSuggestion).ToArray());
+        }
+
+        var topic = queryResult.Topic!;
+        var topicSections = sectionSelector.Select(topic.Sections, options.Section, options.Style);
+        return new DocCommandPayload(
+            "1.0",
+            "doc",
+            topic.TargetVersion,
+            "topic",
+            topic.Id,
+            topic.Title,
+            topic.Language,
+            null,
+            null,
+            false,
+            options.Section,
+            options.Style,
+            options.Examples,
+            options.ExampleKey,
+            CreateSource(topic.Source, topic.SnapshotSchemaVersion, topic.SnapshotId),
+            null,
+            topicSections.Select(section => CreateSection(section, null)).ToArray(),
+            topic.Related.Select(CreateRelated).ToArray(),
+            topic.Warnings.Select(CreateWarning).ToArray(),
+            queryResult.Suggestions.Select(CreateSuggestion).ToArray());
+    }
+
+    private static DocSourceIdentityPayload CreateSource(
+        DocumentSourceIdentity source,
+        string schemaVersion,
+        string snapshotId)
+    {
+        return new DocSourceIdentityPayload(
+            schemaVersion,
+            snapshotId,
+            source.SourceRef,
+            source.SourceCommit,
+            source.GeneratedAt);
+    }
+
+    private static DocSectionPayload CreateSection(
+        DocumentSectionContent section,
+        IReadOnlyList<ControlExampleDocument>? selectedExamples)
+    {
+        return new DocSectionPayload(
+            section.Id,
+            section.Title,
+            section.Order,
+            section.Id.Equals("examples", StringComparison.OrdinalIgnoreCase) && selectedExamples is not null
+                ? RenderExamplesMarkdown(selectedExamples)
+                : section.Markdown,
+            section.SourceKinds);
+    }
+
+    private static DocControlDocumentPayload CreateControl(ControlDocument control, DocCommandOptions options)
+    {
+        var examples = SelectExamples(control.Examples, options);
+        return new DocControlDocumentPayload(
+            CreateIdentity(control.Identity),
+            CreateUsage(control.Usage),
+            CreateApiSurface(control.ApiSurface),
+            CreateLogicStructure(control.LogicStructure),
+            CreateTheme(control.Theme),
+            examples.Select(CreateExample).ToArray(),
+            control.Tokens.Select(CreateToken).ToArray(),
+            control.SemanticParts.Select(CreateSemanticPart).ToArray(),
+            control.SourceFiles.Select(CreateSourceFile).ToArray());
+    }
+
+    private static IReadOnlyList<ControlExampleDocument> SelectExamples(
+        IReadOnlyList<ControlExampleDocument> examples,
+        DocCommandOptions options)
+    {
+        IEnumerable<ControlExampleDocument> filtered = examples;
+        if (!string.IsNullOrWhiteSpace(options.ExampleKey))
+        {
+            filtered = filtered.Where(example => example.SourceKey.Equals(options.ExampleKey, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            filtered = options.Examples switch
+            {
+                DocumentExamplesMode.All => filtered,
+                DocumentExamplesMode.Basic => filtered.Where(example => example.Kind.Equals("basic", StringComparison.OrdinalIgnoreCase)),
+                DocumentExamplesMode.State => filtered.Where(example => example.Kind.Equals("state", StringComparison.OrdinalIgnoreCase)),
+                DocumentExamplesMode.Theme => filtered.Where(example => example.Kind.Equals("theme", StringComparison.OrdinalIgnoreCase)),
+                DocumentExamplesMode.Integration => filtered.Where(example => example.Kind.Equals("integration", StringComparison.OrdinalIgnoreCase)),
+                DocumentExamplesMode.Advanced => filtered.Where(example => example.Kind.Equals("advanced", StringComparison.OrdinalIgnoreCase)),
+                _ => filtered.Where(example => example.Priority <= 100)
+            };
+        }
+
+        return filtered
+            .OrderBy(example => example.Priority)
+            .ThenBy(example => example.SourceKey, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string RenderExamplesMarkdown(IReadOnlyList<ControlExampleDocument> examples)
+    {
+        if (examples.Count == 0)
+        {
+            return "No examples matched the current filters.";
+        }
+
+        var builder = new StringBuilder();
+        foreach (var example in examples)
+        {
+            builder.AppendLine($"### {example.Title}");
+            builder.AppendLine();
+            builder.AppendLine($"SourceKey: `{example.SourceKey}`");
+            builder.AppendLine();
+            builder.AppendLine(example.Description);
+            builder.AppendLine();
+            foreach (var snippet in example.Snippets)
+            {
+                builder.AppendLine($"```{snippet.Language}");
+                builder.AppendLine(snippet.Code);
+                builder.AppendLine("```");
+                builder.AppendLine();
+            }
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static DocControlIdentityPayload CreateIdentity(ControlDocumentIdentity identity)
+    {
+        return new DocControlIdentityPayload(
+            identity.Id,
+            identity.Name,
+            identity.DisplayName,
+            identity.CategoryId,
+            identity.ProductId,
+            identity.PackageId,
+            identity.Namespace,
+            identity.XamlNamespace,
+            identity.BaseType,
+            identity.Status,
+            identity.IsCommercial);
+    }
+
+    private static DocUsagePayload CreateUsage(ControlUsageDocument usage)
+    {
+        return new DocUsagePayload(
+            usage.Summary,
+            usage.WhenToUse,
+            usage.WhenNotToUse,
+            usage.MinimalSnippets.Select(CreateSnippet).ToArray());
+    }
+
+    private static DocApiSurfacePayload CreateApiSurface(ControlApiSurfaceDocument apiSurface)
+    {
+        return new DocApiSurfacePayload(
+            apiSurface.Members.Select(CreateApiMember).ToArray(),
+            apiSurface.Events.Select(CreateApiEvent).ToArray(),
+            apiSurface.InheritedContracts.Select(CreateApiInheritance).ToArray(),
+            apiSurface.Diagnostics.Select(CreateApiDiagnostic).ToArray());
+    }
+
+    private static DocApiMemberPayload CreateApiMember(ApiMemberDocument member)
+    {
+        return new DocApiMemberPayload(
+            member.Name,
+            member.Kind,
+            member.DeclaringType,
+            member.Accessibility,
+            member.Signature,
+            member.Type,
+            member.DefaultValue,
+            member.ContractLevel,
+            member.Description,
+            member.SourcePath,
+            member.SourceLine);
+    }
+
+    private static DocApiEventPayload CreateApiEvent(ApiEventDocument apiEvent)
+    {
+        return new DocApiEventPayload(
+            apiEvent.Name,
+            apiEvent.Kind,
+            apiEvent.DeclaringType,
+            apiEvent.Accessibility,
+            apiEvent.Signature,
+            apiEvent.RoutingStrategy,
+            apiEvent.EventArgsType,
+            apiEvent.Description,
+            apiEvent.SourcePath,
+            apiEvent.SourceLine);
+    }
+
+    private static DocApiInheritancePayload CreateApiInheritance(ApiInheritanceDocument inheritance)
+    {
+        return new DocApiInheritancePayload(
+            inheritance.MemberName,
+            inheritance.Kind,
+            inheritance.DeclaringType,
+            inheritance.Reason);
+    }
+
+    private static DocApiDiagnosticPayload CreateApiDiagnostic(ApiSurfaceDiagnostic diagnostic)
+    {
+        return new DocApiDiagnosticPayload(
+            diagnostic.Code,
+            diagnostic.Message,
+            diagnostic.Severity,
+            diagnostic.MemberName);
+    }
+
+    private static DocLogicStructurePayload CreateLogicStructure(ControlLogicStructureDocument logic)
+    {
+        return new DocLogicStructurePayload(
+            logic.Inheritance.Select(CreateLogicNode).ToArray(),
+            logic.PublicApiGroups.Select(CreateLogicNode).ToArray(),
+            logic.StateFlows.Select(CreateLogicFlow).ToArray(),
+            logic.RuntimeCollaborators.Select(CreateLogicNode).ToArray(),
+            logic.ThemeBridge.Select(CreateLogicFlow).ToArray());
+    }
+
+    private static DocLogicNodePayload CreateLogicNode(LogicNodeDocument node)
+    {
+        return new DocLogicNodePayload(
+            node.Id,
+            node.Kind,
+            node.Label,
+            node.Description,
+            node.RelatedApis);
+    }
+
+    private static DocLogicFlowPayload CreateLogicFlow(LogicFlowDocument flow)
+    {
+        return new DocLogicFlowPayload(flow.Id, flow.Title, flow.Steps);
+    }
+
+    private static DocControlThemePayload CreateTheme(ControlThemeDocument theme)
+    {
+        return new DocControlThemePayload(
+            theme.TargetType,
+            theme.Templates.Select(CreateThemeTemplate).ToArray(),
+            theme.SelectorGroups.Select(CreateThemeSelectorGroup).ToArray(),
+            theme.TemplateBindings.Select(CreateThemeBinding).ToArray(),
+            theme.TokenUsages.Select(CreateThemeTokenUsage).ToArray(),
+            theme.CustomizationBoundaries.Select(CreateThemeCustomizationBoundary).ToArray());
+    }
+
+    private static DocThemeTemplatePayload CreateThemeTemplate(ThemeTemplateDocument template)
+    {
+        return new DocThemeTemplatePayload(
+            template.Id,
+            template.SourceSelector,
+            template.SourcePath,
+            template.SourceLine,
+            template.Roots.Select(CreateThemeNode).ToArray());
+    }
+
+    private static DocThemeNodePayload CreateThemeNode(ThemeNodeDocument node)
+    {
+        return new DocThemeNodePayload(
+            node.ElementType,
+            node.Name,
+            node.Stability,
+            node.Children.Select(CreateThemeNode).ToArray());
+    }
+
+    private static DocThemeSelectorGroupPayload CreateThemeSelectorGroup(ThemeSelectorGroupDocument group)
+    {
+        return new DocThemeSelectorGroupPayload(group.Kind, group.Selectors, group.Description);
+    }
+
+    private static DocThemeBindingPayload CreateThemeBinding(ThemeBindingDocument binding)
+    {
+        return new DocThemeBindingPayload(binding.TargetNode, binding.TargetProperty, binding.SourceProperty);
+    }
+
+    private static DocThemeTokenUsagePayload CreateThemeTokenUsage(ThemeTokenUsageDocument usage)
+    {
+        return new DocThemeTokenUsagePayload(usage.ResourceKind, usage.TokenName, usage.TargetSelector, usage.TargetProperty);
+    }
+
+    private static DocThemeCustomizationBoundaryPayload CreateThemeCustomizationBoundary(ThemeCustomizationBoundaryDocument boundary)
+    {
+        return new DocThemeCustomizationBoundaryPayload(boundary.Target, boundary.Stability, boundary.Guidance);
+    }
+
+    private static DocExamplePayload CreateExample(ControlExampleDocument example)
+    {
+        return new DocExamplePayload(
+            example.SourceKey,
+            example.Title,
+            example.Description,
+            example.Kind,
+            example.Priority,
+            example.BadgeText,
+            example.Snippets.Select(CreateSnippet).ToArray(),
+            example.SourcePath,
+            example.SourceLine);
+    }
+
+    private static DocCodeSnippetPayload CreateSnippet(CodeSnippetDocument snippet)
+    {
+        return new DocCodeSnippetPayload(snippet.Language, snippet.Code, snippet.SourcePath, snippet.SourceLine);
+    }
+
+    private static DocTokenPayload CreateToken(ControlTokenDocument token)
+    {
+        return new DocTokenPayload(token.Name, token.Scope, token.Status, token.Description, token.ThemeUsage);
+    }
+
+    private static DocSemanticPartPayload CreateSemanticPart(ControlSemanticPartDocument semanticPart)
+    {
+        return new DocSemanticPartPayload(
+            semanticPart.Part,
+            semanticPart.AtomUINode,
+            semanticPart.Responsibility,
+            semanticPart.RelatedApis,
+            semanticPart.RelatedTokens,
+            semanticPart.Stability);
+    }
+
+    private static DocSourceFilePayload CreateSourceFile(ControlSourceFileDocument sourceFile)
+    {
+        return new DocSourceFilePayload(sourceFile.Kind, sourceFile.Path, sourceFile.Description);
+    }
+
+    private static DocRelatedItemPayload CreateRelated(DocumentRelatedItem item)
+    {
+        return new DocRelatedItemPayload(item.Kind, item.Id, item.Title, item.Command);
+    }
+
+    private static DocWarningPayload CreateWarning(DocumentWarning warning)
+    {
+        return new DocWarningPayload(warning.Code, warning.Message, warning.Section);
+    }
+
+    private static DocSuggestionPayload CreateSuggestion(DocumentSuggestion suggestion)
+    {
+        return new DocSuggestionPayload(suggestion.Kind, suggestion.Id, suggestion.Title, suggestion.ProductId);
     }
 }
 
-public sealed class DemoCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<DemoCommandOptions>
+public sealed class DemoCommandHandler(
+    MetadataQueryService metadata,
+    DemoQueryService demos,
+    DemoOutputRenderer renderer) : IAtomUICliCommandHandler<DemoCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(DemoCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
@@ -775,40 +1200,239 @@ public sealed class DemoCommandHandler(MetadataQueryService metadata) : IAtomUIC
             return ValueTask.FromResult(MetadataErrors.MissingRequired("Control name is required."));
         }
 
-        if (metadata.FindControl(options.Control, options.Global.Product) is null)
+        if (options.RemovedLanguageOption)
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.ControlNotFound, $"Control '{options.Control}' was not found."));
+            return ValueTask.FromResult(MetadataErrors.InvalidValue("Option '--language' was removed. Use --code-language."));
         }
 
-        var demos = metadata.FindDemos(options.Control, options.DemoName);
-        if (options.DemoName is not null && demos.Count == 0)
+        if (!string.IsNullOrWhiteSpace(options.InvalidCodeLanguage))
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.DemoNotFound, $"Demo '{options.DemoName}' was not found."));
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Unknown demo code language '{options.InvalidCodeLanguage}'. Supported languages: xaml, csharp, all."));
         }
 
-        var text = options.CodeOnly && demos.Count > 0
-            ? demos[0].Xaml
-            : string.Join(Environment.NewLine, demos.Select(demo => $"{demo.Name}: {demo.Title}{Environment.NewLine}{demo.Xaml}"));
-        return ValueTask.FromResult(AtomUICliResult.Success(text));
+        if (options.CodeOnly && string.IsNullOrWhiteSpace(options.DemoKey))
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue("--code-only requires a demo-key."));
+        }
+
+        if (options.CodeOnly && options.Global.Format == OutputFormat.Json)
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue("--code-only cannot be combined with --format json."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Global.Product) && metadata.FindProduct(options.Global.Product) is null)
+        {
+            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.PackageNotFound, $"Product '{options.Global.Product}' was not found."));
+        }
+
+        var query = new DemoQuery(
+            options.Control,
+            options.DemoKey,
+            options.Global.Product,
+            options.Scenario,
+            options.Match,
+            options.Mode,
+            options.CodeLanguage,
+            options.Strict,
+            options.Global.TargetVersion ?? "6.0",
+            options.Global.Language);
+        var queryResult = demos.Query(query);
+        if (queryResult.Status is not DemoQueryStatus.ListFound and not DemoQueryStatus.DemoFound)
+        {
+            return ValueTask.FromResult(MetadataErrors.NotFound(
+                queryResult.ErrorCode ?? AtomUICliErrorCodes.DataUnavailable,
+                queryResult.ErrorMessage ?? $"Demo query for '{options.Control}' failed."));
+        }
+
+        var payload = BuildPayload(options, queryResult);
+        if (payload.SelectedDemo is not null && payload.SelectedDemo.Snippets.Count == 0)
+        {
+            return ValueTask.FromResult(MetadataErrors.InvalidValue(
+                $"Demo '{payload.SelectedDemo.SourceKey}' does not contain code language '{options.CodeLanguage.ToString().ToLowerInvariant()}'."));
+        }
+
+        var includeSource = options.Global.Detail
+                            || (options.IncludeSource && (options.Mode is not DemoCommandMode.List || options.ExpandAll));
+        object resultPayload = options.Mode switch
+        {
+            DemoCommandMode.Code => renderer.RenderCodeOnly(payload),
+            _ => options.Global.Format switch
+            {
+                OutputFormat.Json => payload,
+                OutputFormat.Markdown => renderer.RenderMarkdown(payload, includeSource, options.ExpandAll),
+                _ => renderer.RenderText(payload, includeSource, options.ExpandAll)
+            }
+        };
+
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
+    }
+
+    private static DemoCommandPayload BuildPayload(DemoCommandOptions options, DemoQueryResult queryResult)
+    {
+        var control = queryResult.Control ?? throw new InvalidOperationException("Control document is required.");
+        var selectedDemo = queryResult.SelectedDemo is null
+            ? null
+            : CreateDemoItem(control, queryResult.SelectedDemo, options);
+
+        return new DemoCommandPayload(
+            "1.0",
+            "demo",
+            control.TargetVersion,
+            options.Mode,
+            options.CodeLanguage,
+            CreateControl(control),
+            CreateSource(control),
+            options.DemoKey,
+            options.Scenario,
+            options.Match,
+            queryResult.AvailableScenarios,
+            queryResult.Demos.Select(demo => CreateDemoItem(control, demo, options)).ToArray(),
+            selectedDemo,
+            queryResult.Suggestions.Select(CreateSuggestion).ToArray(),
+            queryResult.Warnings.Select(CreateWarning).ToArray());
+    }
+
+    private static DemoControlPayload CreateControl(ControlDocument control)
+    {
+        return new DemoControlPayload(
+            control.Id,
+            control.Name,
+            control.DisplayName,
+            control.CategoryId,
+            control.ProductId,
+            control.PackageId,
+            control.IsCommercial);
+    }
+
+    private static DemoSourceIdentityPayload CreateSource(ControlDocument control)
+    {
+        return new DemoSourceIdentityPayload(
+            control.SnapshotSchemaVersion,
+            control.SnapshotId,
+            control.Source.SourceRootConvention,
+            control.Source.SourceRef,
+            control.Source.SourceCommit,
+            control.Source.GeneratedAt);
+    }
+
+    private static DemoItemPayload CreateDemoItem(
+        ControlDocument control,
+        ControlExampleDocument example,
+        DemoCommandOptions options)
+    {
+        return new DemoItemPayload(
+            example.SourceKey,
+            example.Title,
+            example.Description,
+            example.Kind,
+            example.Priority,
+            example.BadgeText,
+            SelectSnippets(example.Snippets, options.CodeLanguage).Select(CreateSnippet).ToArray(),
+            example.SourcePath,
+            example.SourceLine,
+            options.IncludeRelated ? CreateRelatedCommands(control, example) : []);
+    }
+
+    private static IReadOnlyList<CodeSnippetDocument> SelectSnippets(
+        IReadOnlyList<CodeSnippetDocument> snippets,
+        DemoCodeLanguage codeLanguage)
+    {
+        return codeLanguage switch
+        {
+            DemoCodeLanguage.Xaml => snippets.Where(snippet => IsXamlSnippet(snippet.Language)).ToArray(),
+            DemoCodeLanguage.CSharp => snippets.Where(snippet => snippet.Language.Equals("csharp", StringComparison.OrdinalIgnoreCase)).ToArray(),
+            _ => snippets.ToArray()
+        };
+    }
+
+    private static bool IsXamlSnippet(string language)
+    {
+        return language.Equals("xaml", StringComparison.OrdinalIgnoreCase)
+               || language.Equals("xml", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DemoCodeSnippetPayload CreateSnippet(CodeSnippetDocument snippet)
+    {
+        return new DemoCodeSnippetPayload(
+            IsXamlSnippet(snippet.Language) ? "xaml" : snippet.Language.ToLowerInvariant(),
+            snippet.Code,
+            snippet.SourcePath,
+            snippet.SourceLine);
+    }
+
+    private static IReadOnlyList<DemoRelatedCommandPayload> CreateRelatedCommands(
+        ControlDocument control,
+        ControlExampleDocument example)
+    {
+        return
+        [
+            new DemoRelatedCommandPayload(
+                $"dotnet atomui doc {control.Name} --example {example.SourceKey}",
+                "Open this example inside the full control documentation."),
+            new DemoRelatedCommandPayload(
+                $"dotnet atomui info {control.Name}",
+                "Show the control metadata and API summary.")
+        ];
+    }
+
+    private static DemoSuggestionPayload CreateSuggestion(DemoSuggestion suggestion)
+    {
+        return new DemoSuggestionPayload(suggestion.SourceKey, suggestion.Title, suggestion.Scenario);
+    }
+
+    private static DemoWarningPayload CreateWarning(DocumentWarning warning)
+    {
+        return new DemoWarningPayload(warning.Code, warning.Message);
     }
 }
 
-public sealed class TokenCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<TokenCommandOptions>
+public sealed class TokenCommandHandler(
+    TokenQueryService tokens,
+    TokenOutputRenderer renderer) : IAtomUICliCommandHandler<TokenCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(TokenCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
-        if (options.Control is not null && metadata.FindControl(options.Control, options.Global.Product) is null)
+        var query = new TokenQueryRequest(
+            options.Control,
+            options.Token,
+            options.Scope,
+            options.Kind,
+            options.Category,
+            options.Match,
+            options.Product ?? options.Global.Product,
+            options.Theme,
+            options.Include,
+            options.Usage,
+            options.Chain,
+            options.Source,
+            options.CustomizableOnly,
+            options.UsedOnly,
+            options.Strict,
+            options.Global.TargetVersion);
+        var queryResult = tokens.Query(query);
+        if (queryResult.Status != TokenQueryStatus.Found)
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.ControlNotFound, $"Control '{options.Control}' was not found."));
+            var message = queryResult.ErrorMessage ?? "Token query failed.";
+            if (queryResult.Suggestions.Count > 0)
+            {
+                message = $"{message} Suggestions: {string.Join(", ", queryResult.Suggestions)}.";
+            }
+
+            return ValueTask.FromResult(queryResult.Status == TokenQueryStatus.InvalidArgument
+                ? MetadataErrors.InvalidValue(message)
+                : MetadataErrors.NotFound(queryResult.ErrorCode ?? AtomUICliErrorCodes.DataUnavailable, message));
         }
 
-        var tokens = metadata.FindTokens(options.Control, options.Name, options.Match);
-        if (!string.IsNullOrWhiteSpace(options.Name) && tokens.Count == 0)
+        var payload = queryResult.Payload ?? throw new InvalidOperationException("Token query payload is required.");
+        object resultPayload = options.Global.Format switch
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.TokenNotFound, $"Token '{options.Name}' was not found."));
-        }
+            OutputFormat.Json => payload,
+            OutputFormat.Markdown => renderer.RenderMarkdown(payload, options.Global.Detail),
+            _ => renderer.RenderText(payload, options.Global.Detail)
+        };
 
-        return ValueTask.FromResult(AtomUICliResult.Success(string.Join(Environment.NewLine, tokens.Select(token => $"{token.Name}: {token.DefaultValue} ({token.Type})"))));
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
     }
 }
 

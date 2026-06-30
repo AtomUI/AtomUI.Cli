@@ -45,4 +45,22 @@ public sealed class CommandManifestTests
             Assert.NotEmpty(manifest.Help.Examples);
         }
     }
+
+    [Fact]
+    public void BuiltInCatalogDescribesProductGradeDemoOptions()
+    {
+        var catalog = CommandManifestCatalog.CreateBuiltIn();
+
+        Assert.True(catalog.TryFind("demo", out var manifest));
+        Assert.NotNull(manifest);
+        Assert.Equal("dotnet atomui demo <control> [demo-key] [options]", manifest.Help.Usage);
+        Assert.Contains(manifest.Help.Arguments, argument => argument.Name == "demo-key");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--all");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--scenario");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--match");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--code-language");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--source");
+        Assert.Contains(manifest.Help.Options, option => option.Name == "--related" && option.ValueName == "true|false");
+        Assert.DoesNotContain(manifest.Help.Options, option => option.Name == "--language");
+    }
 }

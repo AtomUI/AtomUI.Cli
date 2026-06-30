@@ -7,4 +7,5 @@ public sealed record GlobalCliOptions(
     string Language = "zh",
     bool Detail = false,
     string? DataRoot = null,
-    bool NoUpdateCheck = false);
+    bool NoUpdateCheck = false,
+    bool FormatSpecified = false);

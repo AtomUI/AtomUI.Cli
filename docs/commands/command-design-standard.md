@@ -131,3 +131,36 @@ stderr/stdout 边界、text 错误摘要和 `--format json` error envelope 由 [
 | `CommandJsonOutputTests` | `--format json` 成功 payload 和 error envelope 使用 source generated context。 |
 | `CommandCancellationTests` | cancellation token 传播到 handler 和领域服务。 |
 | `CommandAotCompatibilityTests` | options、payload、error DTO 和 command descriptor 不依赖运行时反射发现。 |
+
+## 构建期源码输入标准
+
+知识数据、文档快照和命令帮助数据如果需要从 AtomUI 源码生成，源码只能作为构建期输入，不得在 CLI 运行时读取源码目录、访问 Git 或访问网络。
+
+构建期工具解析 AtomUI 源码根目录时必须使用以下优先级：
+
+1. `--source-root <path>` 命令行参数。
+2. `AtomUIDocSourceRoot` MSBuild 属性。
+3. `ATOMUI_SOURCE_ROOT` 环境变量。
+4. 默认约定路径：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+
+默认约定路径必须基于 AtomUI Cli 仓库根目录计算，不能基于当前 shell 工作目录计算。本地开发和 CI/CD 均应使用相同目录布局：
+
+```text
+<workspace>/
+  AtomUICli/
+  ReferenceProjects/
+    AtomUI/
+```
+
+构建期工具不得自动执行 `git clone`、`git pull` 或 checkout。源码仓库准备、分支切换和 commit 锁定由外层 build system 或 CI/CD pipeline 负责。构建期工具只负责读取已存在的源码目录、校验源码身份并生成快照。
+
+生成的快照必须记录源码身份：
+
+- source root convention。
+- source ref 或 branch。
+- source commit。
+- target version。
+- snapshot schema version。
+- generated at。
+
+Release 构建必须校验源码 commit 是否匹配锁文件；不匹配时生成失败，不得降级为 warning。

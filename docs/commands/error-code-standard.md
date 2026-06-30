@@ -80,7 +80,7 @@ ATOMUICLI_<DOMAIN><NNN>
 | `ATOMUICLI_DATA005` | error | `4` | 数据根、商业 product、目标版本或版本范围无法解析到可用快照。 |
 | `ATOMUICLI_CTRL001` | error | `3` | 控件不存在。 |
 | `ATOMUICLI_CTRL002` | error | `3` | 控件名存在歧义，需要用户选择唯一目标。 |
-| `ATOMUICLI_CTRL003` | error | `3` | 示例不存在。 |
+| `ATOMUICLI_CTRL003` | error | `3` | 示例不存在，例如 Gallery SourceKey、Demo 名称或示例别名无法解析。 |
 | `ATOMUICLI_CTRL004` | error | `3` | Token 不存在。 |
 | `ATOMUICLI_CTRL005` | error | `3` | semantic part 不存在。 |
 | `ATOMUICLI_PKG001` | error | `3` | 包或产品不存在。 |

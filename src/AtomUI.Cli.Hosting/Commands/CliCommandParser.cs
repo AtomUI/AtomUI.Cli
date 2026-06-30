@@ -120,11 +120,11 @@ public sealed class CliCommandParser
                 }
                 else
                 {
-                    global = global with { Format = format };
+                    global = global with { Format = format, FormatSpecified = true };
                 }
                 return true;
             case "--markdown":
-                global = global with { Format = OutputFormat.Markdown };
+                global = global with { Format = OutputFormat.Markdown, FormatSpecified = true };
                 index++;
                 return true;
             case "--lang":

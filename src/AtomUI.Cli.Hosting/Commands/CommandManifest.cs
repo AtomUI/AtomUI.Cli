@@ -157,31 +157,65 @@ public sealed class CommandManifestCatalog
                 ]),
             Knowledge(
                 "demo",
-                "Show demos for a control.",
-                "dotnet atomui demo <control> [demo] [options]",
-                ["dotnet atomui demo Button", "dotnet atomui demo DataGrid --code-only"],
+                "Browse AtomUI control demos and print demo code.",
+                "dotnet atomui demo <control> [demo-key] [options]",
+                [
+                    "dotnet atomui demo Button",
+                    "dotnet atomui demo Button --all",
+                    "dotnet atomui demo Button --scenario state",
+                    "dotnet atomui demo Button button-loading",
+                    "dotnet atomui demo Button button-loading --code-only --code-language xaml",
+                    "dotnet atomui demo Button --format json"
+                ],
                 40,
                 arguments:
                 [
                     new CommandArgumentHelp("control", "Control name."),
-                    new CommandArgumentHelp("demo", "Optional demo name.", IsRequired: false)
+                    new CommandArgumentHelp("demo-key", "Stable demo SourceKey, such as button-loading.", IsRequired: false)
                 ],
                 options:
                 [
-                    new CommandOptionHelp("--list", "List demos only."),
-                    new CommandOptionHelp("--code-only", "Show demo code only.")
+                    new CommandOptionHelp("--list", "List matching demos."),
+                    new CommandOptionHelp("--all", "Expand all matching demos with code."),
+                    new CommandOptionHelp("--scenario", "Filter demos by scenario.", "name"),
+                    new CommandOptionHelp("--match", "Search SourceKey, title, or description.", "text"),
+                    new CommandOptionHelp("--code-only", "Print code only. Requires demo-key."),
+                    new CommandOptionHelp("--code-language", "Code language.", "xaml|csharp|all"),
+                    new CommandOptionHelp("--source", "Include source path and snapshot identity."),
+                    new CommandOptionHelp("--related", "Include related commands.", "true|false"),
+                    new CommandOptionHelp("--strict", "Disable fuzzy suggestions.")
                 ]),
             Knowledge(
                 "token",
-                "Show design tokens for AtomUI or a control.",
-                "dotnet atomui token [control] [options]",
-                ["dotnet atomui token", "dotnet atomui token Button --scope control"],
+                "Inspect shared and control design tokens, resource keys, dependency chains, and theme usage.",
+                "dotnet atomui token [control] [token] [options]",
+                [
+                    "dotnet atomui token",
+                    "dotnet atomui token Button",
+                    "dotnet atomui token Button Padding --chain --usage",
+                    "dotnet atomui token --kind seed",
+                    "dotnet atomui token Button --format markdown"
+                ],
                 100,
-                arguments: [new CommandArgumentHelp("control", "Optional control name.", IsRequired: false)],
+                arguments:
+                [
+                    new CommandArgumentHelp("control", "Optional control name.", IsRequired: false),
+                    new CommandArgumentHelp("token", "Optional token name.", IsRequired: false)
+                ],
                 options:
                 [
-                    new CommandOptionHelp("--scope", "Token scope.", "global|control"),
-                    new CommandOptionHelp("--name", "Exact token name.", "name")
+                    new CommandOptionHelp("--scope", "Token scope.", "shared|control|all"),
+                    new CommandOptionHelp("--kind", "Token kind.", "seed|map|alias|control|resource|all"),
+                    new CommandOptionHelp("--category", "Token category.", "color|size|font|motion|radius|shadow|spacing|state|layout|other"),
+                    new CommandOptionHelp("--match", "Search token name, description, resource key, or type.", "text"),
+                    new CommandOptionHelp("--theme", "Theme algorithm.", "default|dark|compact|all"),
+                    new CommandOptionHelp("--include", "Expand token information.", "usage,chain,source,examples,diagnostics"),
+                    new CommandOptionHelp("--usage", "Include ControlTheme usage points."),
+                    new CommandOptionHelp("--chain", "Include token dependency chain."),
+                    new CommandOptionHelp("--source", "Include source and generated resource information."),
+                    new CommandOptionHelp("--customizable-only", "Only show public stable customization tokens."),
+                    new CommandOptionHelp("--used-only", "Only show tokens consumed by ControlTheme."),
+                    new CommandOptionHelp("--strict", "Fail when snapshot diagnostics contain errors.")
                 ]),
             Knowledge(
                 "semantic",

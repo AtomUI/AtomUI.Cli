@@ -2,7 +2,7 @@
 
 ## 定位
 
-`AtomUICliMetadataModule` 属于 `AtomUI.Cli.Metadata`。它负责加载 AtomUI 公开元数据快照、产品清单、版本索引、控件 API、Token、semantic parts、Demo、包信息和变更记录。
+`AtomUICliMetadataModule` 属于 `AtomUI.Cli.Metadata`。它负责加载 AtomUI 公开 metadata/documentation 快照、产品清单、版本索引、控件 API surface、事件、逻辑结构、ControlTheme、Token、semantic parts、Demo、包信息和变更记录。
 
 ## 模块声明
 
@@ -35,6 +35,7 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 | `IDemoQueryService` | Singleton | 示例列表和示例内容查询。 |
 | `ITokenQueryService` | Singleton | Token 查询。 |
 | `ISemanticPartQueryService` | Singleton | semantic parts 查询。 |
+| `IDocumentationQueryService` | Singleton | 控件完整文档查询，包含 API surface、事件、逻辑结构、ControlTheme 和示例。 |
 
 ## 贡献命令
 
@@ -52,10 +53,12 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 
 ## 数据契约
 
+- `output/obj/AtomUI.Cli.Hosting/Generated/Metadata/BuiltInTokenSnapshot.g.cs`：构建期生成的内置 Token Snapshot，编译进 `AtomUI.Cli.Hosting`。
 - `data/versions.json`
 - `data/products.json`
 - `data/v<major>.json`
 - `data/v<major>.<minor>.<patch>.json`
+- `data/docs/<version>/<lang>.json`
 - 发布包内的 `.json.gz` 压缩快照
 
 ## 生命周期钩子
@@ -68,6 +71,8 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 ## AOT 约束
 
 - 不从 AtomUI 运行时程序集反射提取 API。
+- 不在运行时解析 AtomUI 源码、Gallery、ControlTheme 或控件文档。
+- Token 查询只读取编译进程序集的构建期 snapshot。
 - 不通过类型名字符串构造控件描述。
 - JSON 反序列化必须使用 source generated context。
 - gzip/plain JSON loader 必须共享同一 schema 校验。
@@ -78,6 +83,7 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
 - `versions.json` 指向不存在快照时失败。
 - 控件不存在时返回结构化错误和建议。
 - 商业数据缺失时不能伪造控件 API。
+- `doc` 查询必须返回结构化控件文档，而不是只有 Markdown 字符串。
 - JSON 输出快照测试。
 
 ## 相关文档

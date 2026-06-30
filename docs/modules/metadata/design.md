@@ -2,9 +2,9 @@
 
 ## 1. 模块定位
 
-`AtomUICliMetadataModule` 是 AtomUI Cli 的知识数据模块。它负责加载 AtomUI metadata 快照、合并内置和外部数据根、构建不可变查询索引，并向知识查询命令和 MCP tools 提供领域服务。
+`AtomUICliMetadataModule` 是 AtomUI Cli 的知识数据模块。它负责加载 AtomUI metadata/documentation 快照、合并内置和外部数据根、构建不可变查询索引，并向知识查询命令和 MCP tools 提供领域服务。
 
-模块不解析命令行参数，不读取用户项目，不访问网络，不从 AtomUI 运行时程序集反射提取 API。
+模块不解析命令行参数，不读取用户项目，不访问网络，不从 AtomUI 运行时程序集反射提取 API，也不在运行时解析 AtomUI 源码、Gallery 或 ControlTheme。所有控件 API、事件、逻辑结构、ControlTheme 和示例数据都必须来自构建期快照。
 
 ## 2. 模块注册
 
@@ -60,12 +60,17 @@ public sealed record MetadataSnapshot(
     IReadOnlyList<TokenDescriptor> Tokens,
     IReadOnlyList<DemoDescriptor> Demos,
     IReadOnlyList<DocumentDescriptor> Documents,
+    IReadOnlyList<ControlApiSurfaceDescriptor> ApiSurfaces,
+    IReadOnlyList<ControlLogicStructureDescriptor> LogicStructures,
+    IReadOnlyList<ControlThemeDescriptor> ControlThemes,
     IReadOnlyList<SemanticPartDescriptor> SemanticParts,
     IReadOnlyList<ChangelogEntry> Changelog,
     IReadOnlyList<MigrationGuideDescriptor> MigrationGuides);
 ```
 
-运行时只读取 plain JSON 或 gzip JSON。schema 不兼容时返回 `ATOMUICLI_DATA002`，不能尝试猜测字段含义。
+运行时只读取构建期产物。完整 metadata/documentation snapshot 可以使用 plain JSON 或 gzip JSON；Token snapshot 当前使用编译期 C# 生成文件并编译进 `AtomUI.Cli.Hosting`。schema 不兼容时返回 `ATOMUICLI_DATA002`，不能尝试猜测字段含义。
+
+documentation snapshot 可以作为 `MetadataSnapshot.Documents` 的结构化分区，也可以独立发布为 `data/docs/<version>/<lang>.json`。无论物理形态如何，运行时索引必须暴露同一套查询模型。
 
 ## 5. 索引设计
 
@@ -90,6 +95,11 @@ public interface IMetadataIndexProvider
 | `TokenNameIndex` | scope + token name | `TokenDescriptor` |
 | `DemoNameIndex` | control name + demo name | `DemoDescriptor` |
 | `DocumentIndex` | document kind + target id | `DocumentDescriptor` |
+| `ApiSurfaceIndex` | control name + product id | `ControlApiSurfaceDescriptor` |
+| `EventContractIndex` | control name + event name | `ControlEventContractDescriptor` |
+| `LogicStructureIndex` | control name + product id | `ControlLogicStructureDescriptor` |
+| `ControlThemeIndex` | control name + product id | `ControlThemeDescriptor` |
+| `ExampleSourceKeyIndex` | control name + sourceKey | `ControlExampleDescriptor` |
 | `SemanticPartIndex` | control name + part name | `SemanticPartDescriptor` |
 | `ChangelogIndex` | version + target id | `ChangelogEntry` |
 
@@ -151,6 +161,18 @@ public interface IChangelogQueryService
 | `DataUnavailable` | root id、schema version、related error code。 |
 | `Unauthorized` | product id、required data root kind、configuration hint。 |
 
+`IDocumentationQueryService` 查询控件文档时必须返回统一控件文档结构，包含：
+
+- 控件身份和包信息。
+- 使用文档和常见场景。
+- API surface、事件、protected 扩展点、显式接口和关键继承契约。
+- 逻辑结构。
+- ControlTheme 结构。
+- Gallery 示例和 SourceKey。
+- Token、semantic parts、source files 和 diagnostics。
+
+服务层不能只返回 Markdown 字符串，也不能在运行时访问源码补齐缺失字段。
+
 ## 7. 命令贡献
 
 `ConfigureAtomUICliCommands` 显式贡献：
@@ -198,6 +220,8 @@ context.Add<ChangelogCommandOptions, ChangelogCommandHandler>("changelog", ...);
 
 - snapshot DTO 和 query payload DTO 纳入 source generated JSON context。
 - 不使用反射读取 AtomUI 控件程序集。
+- 不在运行时解析 `docs/controls/**`、Gallery XAML、ViewModel、ControlTheme AXAML 或 Token 源码。
+- 不在运行时根据控件名称生成 API、事件、逻辑结构或模板结构。
 - 不动态加载商业模块程序集。
 - 不通过正则运行时编译构建热路径。
 - command 和 query service 显式 DI 注册。
@@ -212,3 +236,5 @@ context.Add<ChangelogCommandOptions, ChangelogCommandHandler>("changelog", ...);
 | commercial visibility | 未授权字段不输出。 |
 | gzip/plain loader | 两种快照格式。 |
 | command contribution | 9 个知识查询命令全部注册。 |
+| documentation contract | 控件文档索引包含 API surface、事件、逻辑结构、ControlTheme、示例和 source files。 |
+| runtime source isolation | 运行时不读取源码、Gallery、ControlTheme 或 Git。 |

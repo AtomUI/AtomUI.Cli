@@ -3,5 +3,6 @@
   <Project Path="src/AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
   <Project Path="src/AtomUI.Cli.Hosting/AtomUI.Cli.Hosting.csproj" />
   <Project Path="src/AtomUI.Cli/AtomUI.Cli.csproj" />
+  <Project Path="tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj" />
   <Project Path="tests/AtomUI.Cli.Tests/AtomUI.Cli.Tests.csproj" />
 </Solution>

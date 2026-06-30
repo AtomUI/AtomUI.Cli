@@ -159,6 +159,8 @@ $RECYCLE.BIN/
 #################
 tools/*
 !tools/packages.config
+!tools/AtomUI.Cli.MetadataBuilder/
+!tools/AtomUI.Cli.MetadataBuilder/**
 !tools/performances/
 !tools/performances/**
 .nuget
