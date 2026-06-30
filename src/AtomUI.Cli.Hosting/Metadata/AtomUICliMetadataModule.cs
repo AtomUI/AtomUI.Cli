@@ -26,6 +26,9 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
         context.Services.AddSingleton(TokenSnapshotRegistry.CreateDefault());
         context.Services.AddSingleton<TokenQueryService, TokenQueryService>();
         context.Services.AddSingleton<TokenOutputRenderer, TokenOutputRenderer>();
+        context.Services.AddSingleton(SemanticSnapshotRegistry.CreateDefault());
+        context.Services.AddSingleton<SemanticQueryService, SemanticQueryService>();
+        context.Services.AddSingleton<SemanticOutputRenderer, SemanticOutputRenderer>();
         context.Services.AddTransient<ListCommandHandler, ListCommandHandler>();
         context.Services.AddTransient<InfoCommandHandler, InfoCommandHandler>();
         context.Services.AddTransient<DocCommandHandler, DocCommandHandler>();

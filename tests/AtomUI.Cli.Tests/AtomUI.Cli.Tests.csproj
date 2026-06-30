@@ -10,6 +10,7 @@
     <ProjectReference Include="../../src/AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
     <ProjectReference Include="../../src/AtomUI.Cli.Hosting/AtomUI.Cli.Hosting.csproj" />
     <ProjectReference Include="../../src/AtomUI.Cli/AtomUI.Cli.csproj" />
+    <ProjectReference Include="../../tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />

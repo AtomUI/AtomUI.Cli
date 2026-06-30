@@ -99,6 +99,18 @@ public sealed class MetadataCommandTests
     }
 
     [Fact]
+    public void MetadataCatalogComesFromBuildTimeSourceExtraction()
+    {
+        var catalog = MetadataCatalog.CreateDefault();
+
+        Assert.NotEqual("builtin-catalog", catalog.SourceCommit);
+        Assert.Equal(71, catalog.Controls.Count);
+        Assert.Contains(catalog.Controls, control => control.Name == "Button" && control.CategoryId == "general");
+        Assert.DoesNotContain(catalog.Controls, control => control.Name == "Palette");
+        Assert.DoesNotContain(catalog.Controls, control => control.Name == "CustomizeTheme");
+    }
+
+    [Fact]
     public async Task ListMarkdownShortcutOutputsMarkdown()
     {
         var result = await DispatchListAsync(["list", "--markdown"]);
@@ -123,7 +135,7 @@ public sealed class MetadataCommandTests
         Assert.Contains("Namespace: AtomUI.Desktop.Controls", output, StringComparison.Ordinal);
         Assert.Contains("Base type: Avalonia.Controls.Button", output, StringComparison.Ordinal);
         Assert.Contains("Usage:", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Save\" />", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary Button\" />", output, StringComparison.Ordinal);
         Assert.Contains("Template parts:", output, StringComparison.Ordinal);
         Assert.Contains("PART_LoadingIcon", output, StringComparison.Ordinal);
         Assert.Contains("States:", output, StringComparison.Ordinal);
@@ -145,7 +157,7 @@ public sealed class MetadataCommandTests
         Assert.StartsWith("# Button", output, StringComparison.Ordinal);
         Assert.Contains("| Field | Value |", output, StringComparison.Ordinal);
         Assert.Contains("```xml", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Save\" />", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary Button\" />", output, StringComparison.Ordinal);
         Assert.Contains("## API", output, StringComparison.Ordinal);
         Assert.Contains("| Property | Type | Default | Kind | Description |", output, StringComparison.Ordinal);
         Assert.Contains("## Template Parts", output, StringComparison.Ordinal);
@@ -167,7 +179,7 @@ public sealed class MetadataCommandTests
         Assert.Equal("Button", payload.GetProperty("control").GetProperty("name").GetString());
         Assert.Equal("AtomUI.Desktop.Controls", payload.GetProperty("control").GetProperty("packageId").GetString());
         Assert.Equal("Avalonia.Controls.Button", payload.GetProperty("type").GetProperty("baseType").GetString());
-        Assert.Equal("<atom:Button ButtonType=\"Primary\" Content=\"Save\" />", payload.GetProperty("usage").GetProperty("xamlSnippet").GetString());
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary Button\" />", payload.GetProperty("usage").GetProperty("xamlSnippet").GetString(), StringComparison.Ordinal);
         Assert.Contains(
             payload.GetProperty("api").EnumerateArray(),
             item => item.GetProperty("name").GetString() == "ButtonType"
@@ -285,10 +297,10 @@ public sealed class MetadataCommandTests
         Assert.StartsWith("Button demos (12)", output, StringComparison.Ordinal);
         Assert.Contains("## Basic", output, StringComparison.Ordinal);
         Assert.Contains("button-type - 按钮类型", output, StringComparison.Ordinal);
-        Assert.Contains("展示 Default、Primary、Dashed、Text 和 Link 的视觉优先级。", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary\" />", output, StringComparison.Ordinal);
-        Assert.Contains("button-color-variant - 颜色变体", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button Color=\"Success\" Variant=\"Outlined\" Content=\"Success\" />", output, StringComparison.Ordinal);
+        Assert.Contains("AtomUI 中包含主按钮、默认按钮、虚线按钮、文本按钮和链接按钮。", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary Button\" />", output, StringComparison.Ordinal);
+        Assert.Contains("button-color-variant - 颜色与变体", output, StringComparison.Ordinal);
+        Assert.Contains("Color=\"Primary\" Variant=\"Outlined\"", output, StringComparison.Ordinal);
         Assert.DoesNotContain("Run:", output, StringComparison.Ordinal);
         Assert.DoesNotContain("Related:", output, StringComparison.Ordinal);
     }
@@ -305,7 +317,7 @@ public sealed class MetadataCommandTests
         Assert.Contains("### 加载状态", output, StringComparison.Ordinal);
         Assert.Contains("SourceKey: `button-loading`", output, StringComparison.Ordinal);
         Assert.Contains("```xaml", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Saving\" />", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Loading\" />", output, StringComparison.Ordinal);
         Assert.DoesNotContain("## Basic", output, StringComparison.Ordinal);
         Assert.DoesNotContain("| SourceKey | Title | Description |", output, StringComparison.Ordinal);
     }
@@ -335,7 +347,7 @@ public sealed class MetadataCommandTests
         Assert.StartsWith("Button demo: 加载状态", output, StringComparison.Ordinal);
         Assert.Contains("SourceKey: button-loading", output, StringComparison.Ordinal);
         Assert.Contains("Scenario: state", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Saving\" />", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Loading\" />", output, StringComparison.Ordinal);
         Assert.Contains("dotnet atomui doc Button --example button-loading", output, StringComparison.Ordinal);
         Assert.DoesNotContain("Button demos (", output, StringComparison.Ordinal);
     }
@@ -348,9 +360,9 @@ public sealed class MetadataCommandTests
         Assert.True(result.Result.IsSuccess);
         var output = Assert.Single(result.Output.Lines);
         Assert.Contains("Source: controlgallery/AtomUIGallery/ShowCases/General/Button/Views/ButtonShowCase.axaml", output, StringComparison.Ordinal);
-        Assert.Contains("Snapshot: atomui-docs-v6-builtin", output, StringComparison.Ordinal);
+        Assert.Contains("Snapshot: atomui-docs-source-", output, StringComparison.Ordinal);
         Assert.Contains("Source ref: ../ReferenceProjects/AtomUI @ release/6.0", output, StringComparison.Ordinal);
-        Assert.Contains("Source commit: builtin-doc-snapshot", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Source commit: builtin-doc-snapshot", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -371,7 +383,8 @@ public sealed class MetadataCommandTests
 
         Assert.True(result.Result.IsSuccess);
         var output = Assert.Single(result.Output.Lines);
-        Assert.Equal("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Saving\" />", output);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" IsLoading=\"True\" Content=\"Loading\" />", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Button demo:", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -388,7 +401,7 @@ public sealed class MetadataCommandTests
         Assert.Equal("demo", payload.GetProperty("command").GetString());
         Assert.Equal("List", payload.GetProperty("mode").GetString());
         Assert.Equal("Button", payload.GetProperty("control").GetProperty("name").GetString());
-        Assert.Equal("atomui-docs-v6-builtin", payload.GetProperty("source").GetProperty("snapshotId").GetString());
+        Assert.StartsWith("atomui-docs-source-", payload.GetProperty("source").GetProperty("snapshotId").GetString(), StringComparison.Ordinal);
         Assert.Contains(
             payload.GetProperty("availableScenarios").EnumerateArray(),
             item => item.GetString() == "state");
@@ -431,7 +444,7 @@ public sealed class MetadataCommandTests
         Assert.Contains("## Overview", output, StringComparison.Ordinal);
         Assert.Contains("## Install", output, StringComparison.Ordinal);
         Assert.Contains("## Usage", output, StringComparison.Ordinal);
-        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Save\" />", output, StringComparison.Ordinal);
+        Assert.Contains("<atom:Button ButtonType=\"Primary\" Content=\"Primary Button\" />", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -454,10 +467,10 @@ public sealed class MetadataCommandTests
         Assert.Contains("OnApplyTemplate", output, StringComparison.Ordinal);
         Assert.Contains("MeasureOverride", output, StringComparison.Ordinal);
         Assert.Contains("## 逻辑结构", output, StringComparison.Ordinal);
-        Assert.Contains("ResolveEffectiveColorAndVariant", output, StringComparison.Ordinal);
+        Assert.Contains(":loading state", output, StringComparison.Ordinal);
         Assert.Contains("## ControlTheme 结构", output, StringComparison.Ordinal);
         Assert.Contains("PART_WaveSpirit", output, StringComparison.Ordinal);
-        Assert.Contains("Template variant: Default / Link / Primary / Text", output, StringComparison.Ordinal);
+        Assert.Contains("Template: ButtonTheme", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -496,7 +509,7 @@ public sealed class MetadataCommandTests
             item => item.GetProperty("sourceKey").GetString() == "button-color-variant");
         Assert.Contains(
             control.GetProperty("theme").GetProperty("templates").EnumerateArray(),
-            item => item.GetProperty("id").GetString() == "button-default-template");
+            item => item.GetProperty("sourcePath").GetString()?.EndsWith("ButtonTheme.axaml", StringComparison.Ordinal) == true);
         Assert.DoesNotContain("\"payload\":\"", output, StringComparison.Ordinal);
     }
 
@@ -566,8 +579,32 @@ public sealed class MetadataCommandTests
 
         Assert.True(result.Result.IsSuccess);
         var output = Assert.Single(result.Output.Lines);
-        Assert.StartsWith("# AtomUI Design Language", output, StringComparison.Ordinal);
+        Assert.StartsWith("# AtomUI 文档总览", output, StringComparison.Ordinal);
         Assert.Contains("## Overview", output, StringComparison.Ordinal);
+        Assert.Contains("AtomUI 控件 Token 设计规范", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChangelogOutputsSourceChangelogEntries()
+    {
+        var result = await DispatchChangelogAsync(["changelog"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        Assert.Contains("6.0.6 [added] AtomUI: Add customizable size support across Button family", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Initial Button metadata", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("No changelog entries.", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DocumentSnapshotComesFromBuildTimeSourceExtraction()
+    {
+        var registry = DocumentSnapshotRegistry.CreateDefault();
+        var snapshot = Assert.Single(registry.Snapshots);
+
+        Assert.NotEqual("builtin-doc-snapshot", snapshot.Source.SourceCommit);
+        Assert.StartsWith("atomui-docs-source-", snapshot.SnapshotId, StringComparison.Ordinal);
+        Assert.Contains(snapshot.Controls, control => control.Name == "Button");
     }
 
     [Fact]
@@ -707,6 +744,50 @@ public sealed class MetadataCommandTests
         Assert.Contains(snapshot.ControlTokenSets, control => control.ControlName == "Button" && control.Tokens.Count == 53);
     }
 
+    [Fact]
+    public async Task SemanticButtonOutputsSourceDerivedParts()
+    {
+        var result = await DispatchSemanticAsync(["semantic", "Button"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        Assert.Contains("PART_LoadingIcon", output, StringComparison.Ordinal);
+        Assert.Contains("PART_ContentPresenter", output, StringComparison.Ordinal);
+        Assert.Contains(":loading", output, StringComparison.Ordinal);
+        Assert.Contains("IsLoading", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("root: Root visual element.", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SemanticButtonOutputsControlThemeTree()
+    {
+        var result = await DispatchSemanticAsync(["semantic", "Button"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        Assert.Contains("ControlTheme tree:", output, StringComparison.Ordinal);
+        Assert.Contains("ButtonTheme", output, StringComparison.Ordinal);
+        Assert.Contains("Panel", output, StringComparison.Ordinal);
+        Assert.Contains("DockPanel#PART_RootLayout", output, StringComparison.Ordinal);
+        Assert.Contains("LoadingOutlined#PART_LoadingIcon", output, StringComparison.Ordinal);
+        Assert.Contains("ContentPresenter#PART_ContentPresenter", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SemanticJsonDoesNotIncludeTokenDiagnostics()
+    {
+        var result = await DispatchSemanticAsync(["--format", "json", "semantic", "Button", "--part", "PART_LoadingIcon"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        using var document = JsonDocument.Parse(output);
+        var diagnostics = document.RootElement.GetProperty("payload").GetProperty("diagnostics").EnumerateArray();
+
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.GetProperty("code").GetString()?.StartsWith("ATOMUICLI_TOKEN_", StringComparison.Ordinal) == true);
+    }
+
     private static async Task<ListDispatchResult> DispatchListAsync(string[] args)
     {
         var output = new RecordingOutputWriter();
@@ -832,6 +913,61 @@ public sealed class MetadataCommandTests
         var descriptor = CliCommandDescriptor.Create<TokenCommandOptions, TokenCommandHandler>(
             "token",
             TokenCommandOptions.Parse,
+            CommandGroup.Knowledge,
+            new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
+        var dispatcher = new CliCommandDispatcher(
+            new CliCommandParser(),
+            services.GetRequiredService<IServiceScopeFactory>(),
+            output);
+
+        var result = await dispatcher.DispatchAsync(
+            args,
+            CliCommandDescriptorCatalog.Create([descriptor]),
+            TestContext.Current.CancellationToken);
+
+        return new ListDispatchResult(result, output);
+    }
+
+    private static async Task<ListDispatchResult> DispatchSemanticAsync(string[] args)
+    {
+        var output = new RecordingOutputWriter();
+        var services = new ServiceCollection()
+            .AddSingleton(MetadataCatalog.CreateDefault())
+            .AddSingleton<MetadataQueryService>()
+            .AddSingleton(SemanticSnapshotRegistry.CreateDefault())
+            .AddSingleton<SemanticQueryService>()
+            .AddSingleton<SemanticOutputRenderer>()
+            .AddTransient<SemanticCommandHandler>()
+            .BuildServiceProvider();
+        var descriptor = CliCommandDescriptor.Create<SemanticCommandOptions, SemanticCommandHandler>(
+            "semantic",
+            SemanticCommandOptions.Parse,
+            CommandGroup.Knowledge,
+            new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
+        var dispatcher = new CliCommandDispatcher(
+            new CliCommandParser(),
+            services.GetRequiredService<IServiceScopeFactory>(),
+            output);
+
+        var result = await dispatcher.DispatchAsync(
+            args,
+            CliCommandDescriptorCatalog.Create([descriptor]),
+            TestContext.Current.CancellationToken);
+
+        return new ListDispatchResult(result, output);
+    }
+
+    private static async Task<ListDispatchResult> DispatchChangelogAsync(string[] args)
+    {
+        var output = new RecordingOutputWriter();
+        var services = new ServiceCollection()
+            .AddSingleton(MetadataCatalog.CreateDefault())
+            .AddSingleton<MetadataQueryService>()
+            .AddTransient<ChangelogCommandHandler>()
+            .BuildServiceProvider();
+        var descriptor = CliCommandDescriptor.Create<ChangelogCommandOptions, ChangelogCommandHandler>(
+            "changelog",
+            ChangelogCommandOptions.Parse,
             CommandGroup.Knowledge,
             new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
         var dispatcher = new CliCommandDispatcher(

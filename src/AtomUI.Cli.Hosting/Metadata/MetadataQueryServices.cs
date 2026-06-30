@@ -2,6 +2,8 @@ namespace AtomUI.Cli.Hosting.Metadata;
 
 public sealed class MetadataQueryService(MetadataCatalog catalog)
 {
+    private static readonly Lazy<DocumentSnapshotRegistry> DefaultDocuments = new(DocumentSnapshotRegistry.CreateDefault);
+
     public MetadataCatalog Catalog => catalog;
 
     public IReadOnlyList<ControlDescriptor> ListControls(
@@ -129,14 +131,10 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
         ArgumentNullException.ThrowIfNull(options);
 
         var targetVersion = options.Global.TargetVersion ?? catalog.TargetVersion;
-        if (control.Name.Equals("Button", StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateButtonInfoPayload(control, targetVersion);
-        }
-
-        return control.Name.Equals("DataGrid", StringComparison.OrdinalIgnoreCase)
-            ? CreateDataGridInfoPayload(control, targetVersion)
-            : CreateFallbackInfoPayload(control, targetVersion);
+        var document = FindControlDocument(control, targetVersion, options.Global.Language);
+        return document is null
+            ? CreateInfoPayloadFromCatalog(control, targetVersion)
+            : CreateInfoPayloadFromDocument(control, document, targetVersion);
     }
 
     public ListCommandPayload CreateListPayload(ListCommandOptions options)
@@ -165,183 +163,92 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
             []);
     }
 
-    private InfoCommandPayload CreateButtonInfoPayload(ControlDescriptor control, string targetVersion)
+    private static ControlDocument? FindControlDocument(ControlDescriptor control, string targetVersion, string language)
     {
-        var themeFile = "AtomUI.Desktop.Controls/Buttons/Themes/ButtonTheme.axaml";
+        var snapshots = DefaultDocuments.Value.Snapshots
+            .Where(snapshot => snapshot.TargetVersion.Equals(targetVersion, StringComparison.OrdinalIgnoreCase)
+                               || snapshot.TargetVersion.StartsWith(targetVersion, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var languageMatches = snapshots.Where(snapshot => snapshot.Language.Equals(language, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var candidates = languageMatches.Length > 0 ? languageMatches : snapshots;
+        return candidates
+            .SelectMany(snapshot => snapshot.Controls)
+            .FirstOrDefault(document =>
+                document.Name.Equals(control.Name, StringComparison.OrdinalIgnoreCase)
+                && document.ProductId.Equals(control.ProductId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private InfoCommandPayload CreateInfoPayloadFromDocument(
+        ControlDescriptor control,
+        ControlDocument document,
+        string targetVersion)
+    {
         return new InfoCommandPayload(
             "1.0",
             "info",
             targetVersion,
             CreateIdentity(control),
             new InfoControlTypePayload(
-                control.Namespace,
-                control.PackageId,
-                $"{control.Namespace}.Button",
-                "Avalonia.Controls.Button",
-                [
-                    "ICustomizableSizeTypeAware",
-                    "IWaveSpiritAwareControl",
-                    "ICompactSpaceAware",
-                    "IFormItemAware"
-                ],
-                "https://atomui.net",
+                document.Identity.Namespace,
+                document.PackageId,
+                $"{document.Identity.Namespace}.{document.Name}",
+                document.Identity.BaseType ?? "Avalonia.Controls.Control",
+                document.ApiSurface.InheritedContracts
+                    .Where(item => item.Kind.Equals("interface", StringComparison.OrdinalIgnoreCase))
+                    .Select(item => item.MemberName)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(item => item, StringComparer.Ordinal)
+                    .ToArray(),
+                document.Identity.XamlNamespace,
                 "atom"),
             new InfoControlDescriptionPayload(
-                "Trigger actions and express intent with clear visual priority.",
-                "Button is the primary action control in AtomUI. Use type, shape, size, icon and loading states to build predictable workflows.",
-                "Use Button for explicit user commands. Prefer one primary action per region and use loading, disabled, danger and icon states to communicate intent."),
+                document.Summary,
+                document.Usage.Summary,
+                string.Join(" ", document.Usage.WhenToUse.Take(2))),
             new InfoControlUsagePayload(
-                [control.PackageId],
-                [control.Namespace],
-                "<atom:Button ButtonType=\"Primary\" Content=\"Save\" />",
-                "new Button { Content = \"Save\", ButtonType = ButtonType.Primary };"),
-            [
-                Api("ButtonType", "ButtonType", "Default", "Sets the visual button type, such as primary, default, dashed, text, or link."),
-                Api("SizeType", "CustomizableSizeType", "Middle", "Controls button height and padding density."),
-                Api("Shape", "ButtonShape", "Default", "Changes button shape between default, round, and circle."),
-                Api("Icon", "Icon?", "null", "Displays an icon before or after the content, or as an icon-only button."),
-                Api("IconPlacement", "ButtonIconPlacement", "Start", "Sets whether the icon appears at the start or end of the content."),
-                Api("IsLoading", "bool", "false", "Shows a loading indicator and communicates that the action is in progress."),
-                Api("IsDanger", "bool", "false", "Applies danger styling for destructive or high-risk actions."),
-                Api("Color", "ButtonColor?", "null", "Sets the semantic color used by the Color and Variant model."),
-                Api("Variant", "ButtonVariant?", "null", "Sets the visual variant, such as solid, outlined, dashed, filled, text, or link."),
-                Api("CustomBackground", "IBrush?", "null", "Sets a controlled custom normal-state background overlay for solid non-danger buttons.")
-            ],
+                [document.PackageId],
+                [document.Identity.Namespace],
+                document.Usage.MinimalSnippets.FirstOrDefault(item => item.Language.Equals("xml", StringComparison.OrdinalIgnoreCase))?.Code
+                    ?? $"<atom:{document.Name} />",
+                document.Usage.MinimalSnippets.FirstOrDefault(item => item.Language.Equals("csharp", StringComparison.OrdinalIgnoreCase))?.Code),
+            document.ApiSurface.Members.Select(CreateApi).ToArray(),
             new InfoTemplateContractPayload(
-                [themeFile],
-                [
-                    TemplatePart("PART_WaveSpirit", "WaveSpiritDecorator", themeFile, "Hosts the wave feedback visual."),
-                    TemplatePart("PART_RootLayout", "DockPanel", themeFile, "Arranges loading icon, leading or trailing icon, and content."),
-                    TemplatePart("PART_LoadingIcon", "LoadingOutlined", themeFile, "Displays the loading animation when IsLoading is true."),
-                    TemplatePart("PART_ButtonIcon", "IconPresenter", themeFile, "Renders the configured icon."),
-                    TemplatePart("PART_ContentPresenter", "ContentPresenter", themeFile, "Renders Button content.")
-                ],
-                ["Custom themes should keep the PART names stable so control logic and visual states continue to work."]),
-            [
-                State(":icononly", "pseudo-class", "Applied when the button renders as an icon-only action.", "Button"),
-                State(":loading", "pseudo-class", "Applied while the loading indicator is visible.", "Button"),
-                State(":danger", "pseudo-class", "Applied for destructive or high-risk actions.", "Button"),
-                State(":default", "pseudo-class", "Applied for the default visual type.", "Button"),
-                State(":dashed", "pseudo-class", "Applied for dashed visual type.", "Button"),
-                State(":primary", "pseudo-class", "Applied for primary visual type.", "Button"),
-                State(":link", "pseudo-class", "Applied for link visual type.", "Button"),
-                State(":text", "pseudo-class", "Applied for text visual type.", "Button")
-            ],
-            [
-                Token("ColorPrimary", "shared", "Color", "stable", null, "SharedTokenResource ColorPrimary", "Primary color used by primary buttons and focused interaction states."),
-                Token("ControlHeight", "shared", "Double", "stable", null, "SharedTokenResource ControlHeight", "Shared control height scale used by large, middle and small buttons."),
-                Token("ButtonToken", "control", "Token", "mapped", null, "ButtonTokenResource", "Control token mapping that derives Button visual values from shared tokens.")
-            ],
-            [
-                Demo("basic", "Button type", "Use button type to express action priority in the current region.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/basic", ["api"]),
-                Demo("shape-icon", "Shape and icon", "Round, circle and icon buttons keep compact actions easy to recognize.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/shape-icon", ["icon"]),
-                Demo("size", "Size", "Switch between large, middle and small sizes to match density requirements.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/size", ["layout"]),
-                Demo("state", "State", "Loading, disabled, danger and ghost states communicate availability and risk.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/state", ["state"])
-            ],
-            CreateRelatedCommands(control.Name),
+                document.Theme.Templates.Select(template => template.SourcePath).Distinct(StringComparer.Ordinal).ToArray(),
+                document.Theme.Templates
+                    .SelectMany(template => template.Roots)
+                    .Where(node => !string.IsNullOrWhiteSpace(node.Name))
+                    .Select(node => new InfoTemplatePartPayload(
+                        node.Name!,
+                        node.ElementType,
+                        IsRequired: true,
+                        document.Theme.Templates.First(template => template.Roots.Contains(node)).SourcePath,
+                        document.SemanticParts.FirstOrDefault(part => part.Part.Equals(node.Name, StringComparison.Ordinal))?.Responsibility
+                            ?? $"{node.Name} template part extracted from ControlTheme."))
+                    .DistinctBy(part => part.Name)
+                    .ToArray(),
+                ["Template contract is generated from ControlTheme source."]),
+            document.LogicStructure.StateFlows
+                .Select(flow => new InfoControlStatePayload(
+                    flow.Id.StartsWith(':') ? flow.Id : $":{flow.Id}",
+                    "pseudo-class",
+                    string.Join(" ", flow.Steps),
+                    "control-source"))
+                .ToArray(),
+            CreateTokenSummaries(document),
+            document.Examples
+                .Select(example => new InfoDemoSummaryPayload(
+                    example.SourceKey,
+                    example.Title,
+                    example.Description,
+                    $"{control.GalleryRoute}/{example.SourceKey}",
+                    [example.Kind]))
+                .ToArray(),
+            document.Related.Select(item => new InfoRelatedCommandPayload(item.Command, item.Title)).ToArray(),
             CreateDiagnostics(control));
     }
 
-    private InfoCommandPayload CreateDataGridInfoPayload(ControlDescriptor control, string targetVersion)
+    private InfoCommandPayload CreateInfoPayloadFromCatalog(ControlDescriptor control, string targetVersion)
     {
-        var themeFile = "AtomUI.Desktop.Controls.DataGrid/Themes/DataGridTheme.axaml";
-        return new InfoCommandPayload(
-            "1.0",
-            "info",
-            targetVersion,
-            CreateIdentity(control),
-            new InfoControlTypePayload(
-                control.Namespace,
-                control.PackageId,
-                $"{control.Namespace}.DataGrid",
-                "Avalonia.Controls.DataGrid",
-                [],
-                "https://atomui.net",
-                "atom"),
-            new InfoControlDescriptionPayload(
-                "Display, operate, and navigate tabular data.",
-                "DataGrid is the AtomUI commercial table control for tabular data, selection, sorting, filtering, frozen columns, row details, pagination, and operation states.",
-                "Use DataGrid for dense tabular workflows. Keep item models stable, define columns explicitly for production views, and enable sorting, filtering, resizing, or pagination only when the workflow needs them."),
-            new InfoControlUsagePayload(
-                [control.PackageId],
-                [control.Namespace],
-                "<atom:DataGrid ItemsSource=\"{Binding Items}\" />",
-                "new DataGrid { ItemsSource = Items };"),
-            [
-                Api("ItemsSource", "IEnumerable?", "null", "Provides the row data source.", "DataGrid"),
-                Api("AutoGenerateColumns", "bool", "false", "Controls whether columns are generated from the item model.", "DataGrid"),
-                Api("Columns", "DataGridColumnCollection", "[]", "Defines explicit grid columns.", "DataGrid"),
-                Api("ColumnGroups", "DataGridColumnGroupCollection", "[]", "Defines grouped column headers.", "DataGrid"),
-                Api("SelectionMode", "DataGridSelectionMode", "Single", "Controls single or multiple row selection.", "DataGrid"),
-                Api("SelectTriggerType", "DataGridSelectTriggerType", "Row", "Controls how selection is triggered.", "DataGrid"),
-                Api("CanUserSortColumns", "bool", "false", "Allows users to sort columns.", "DataGrid"),
-                Api("CanUserFilterColumns", "bool", "false", "Allows users to filter columns.", "DataGrid"),
-                Api("CanUserResizeColumns", "bool", "false", "Allows users to resize columns.", "DataGrid"),
-                Api("CanUserReorderColumns", "bool", "false", "Allows users to reorder columns.", "DataGrid"),
-                Api("CanUserReorderRows", "bool", "false", "Allows users to reorder rows.", "DataGrid"),
-                Api("LeftFrozenColumnCount", "int", "0", "Keeps columns frozen on the left side.", "DataGrid"),
-                Api("RightFrozenColumnCount", "int", "0", "Keeps columns frozen on the right side.", "DataGrid"),
-                Api("RowDetailsTemplate", "IDataTemplate?", "null", "Displays expanded row details.", "DataGrid"),
-                Api("PaginationVisibility", "DataGridPaginationVisibility", "Bottom", "Controls pagination placement.", "DataGrid"),
-                Api("PageSize", "int", "10", "Sets the default page size.", "DataGrid"),
-                Api("IsOperating", "bool", "false", "Shows operation progress state.", "DataGrid"),
-                Api("GridLinesVisibility", "DataGridGridLinesVisibility", "None", "Controls grid line rendering.", "DataGrid"),
-                Api("IsReadOnly", "bool", "false", "Prevents editing when true.", "DataGrid")
-            ],
-            new InfoTemplateContractPayload(
-                [themeFile],
-                [
-                    TemplatePart("PART_RowsPresenter", "DataGridRowsPresenter", themeFile, "Hosts the visible row collection."),
-                    TemplatePart("PART_ColumnHeadersPresenter", "DataGridColumnHeadersPresenter", themeFile, "Hosts column headers."),
-                    TemplatePart("PART_Pagination", "Pagination", themeFile, "Hosts pagination controls when enabled.")
-                ],
-                ["Commercial DataGrid themes should keep row, header, and pagination parts stable for virtualization and interaction behavior."]),
-            [
-                State(":operating", "pseudo-class", "Applied while grid operations are in progress.", "DataGrid"),
-                State(":readonly", "pseudo-class", "Applied when the grid is read-only.", "DataGrid"),
-                State(":selected", "interaction-state", "Applied to selected rows or cells.", "DataGrid"),
-                State(":editing", "interaction-state", "Applied to editing cells.", "DataGrid")
-            ],
-            [
-                Token("HeaderBg", "control", "Color", "stable", null, "DataGridTokenResource HeaderBg", "Header background color."),
-                Token("HeaderColor", "control", "Color", "stable", null, "DataGridTokenResource HeaderColor", "Header foreground color."),
-                Token("RowHoverBg", "control", "Color", "stable", null, "DataGridTokenResource RowHoverBg", "Row hover background color."),
-                Token("RowSelectedBg", "control", "Color", "stable", null, "DataGridTokenResource RowSelectedBg", "Selected row background color."),
-                Token("CellPadding", "control", "Thickness", "stable", null, "DataGridTokenResource CellPadding", "Default cell padding."),
-                Token("BorderColor", "control", "Color", "stable", null, "DataGridTokenResource BorderColor", "Grid border color."),
-                Token("PaginationMargin", "control", "Thickness", "stable", null, "DataGridTokenResource PaginationMargin", "Pagination layout margin.")
-            ],
-            [
-                Demo("basic", "Basic DataGrid", "Display a simple item collection.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/basic", ["data"]),
-                Demo("columns", "Columns", "Define explicit columns and column groups.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/columns", ["columns"]),
-                Demo("selection", "Selection", "Configure row selection workflows.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/selection", ["selection"]),
-                Demo("pagination", "Pagination", "Navigate tabular data by pages.", $"{NormalizeGalleryRoute(control.GalleryRoute)}/pagination", ["pagination"])
-            ],
-            CreateRelatedCommands(control.Name),
-            CreateDiagnostics(control));
-    }
-
-    private InfoCommandPayload CreateFallbackInfoPayload(ControlDescriptor control, string targetVersion)
-    {
-        var demos = FindDemos(control.Name)
-            .Select(demo => new InfoDemoSummaryPayload(
-                demo.Name,
-                demo.Title,
-                demo.Description,
-                $"{NormalizeGalleryRoute(control.GalleryRoute)}/{demo.Name}",
-                []))
-            .ToArray();
-        var tokens = FindTokens(control.Name)
-            .Select(token => new InfoTokenSummaryPayload(
-                token.Name,
-                token.Scope.Equals("global", StringComparison.OrdinalIgnoreCase) ? "shared" : "control",
-                token.Type,
-                token.IsInherited ? "inherited" : "stable",
-                token.DefaultValue,
-                null,
-                token.Description))
-            .ToArray();
-
         return new InfoCommandPayload(
             "1.0",
             "info",
@@ -358,7 +265,7 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
             new InfoControlDescriptionPayload(
                 control.Description,
                 control.Description,
-                $"Use {control.Name} from {control.PackageId}. Run the related commands for examples, tokens, and semantic details."),
+                $"Use {control.Name} from {control.PackageId}."),
             new InfoControlUsagePayload(
                 [control.PackageId],
                 [control.Namespace],
@@ -367,8 +274,8 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
             [],
             new InfoTemplateContractPayload([], [], []),
             [],
-            tokens,
-            demos,
+            [],
+            [],
             CreateRelatedCommands(control.Name),
             CreateDiagnostics(control));
     }
@@ -388,59 +295,67 @@ public sealed class MetadataQueryService(MetadataCatalog catalog)
             "Stable");
     }
 
-    private static InfoApiMemberPayload Api(
-        string name,
-        string type,
-        string defaultValue,
-        string description,
-        string ownerType = "Button")
+    private static InfoApiMemberPayload CreateApi(ApiMemberDocument member)
     {
         return new InfoApiMemberPayload(
-            name,
-            "property",
-            type,
-            defaultValue,
-            "styled",
-            ownerType,
-            IsBindable: true,
+            member.Name,
+            member.Kind.Contains("method", StringComparison.OrdinalIgnoreCase) ? "method" : member.Kind.Contains("constructor", StringComparison.OrdinalIgnoreCase) ? "constructor" : "property",
+            member.Type ?? string.Empty,
+            member.DefaultValue ?? string.Empty,
+            NormalizeMemberKind(member.Kind),
+            member.DeclaringType,
+            IsBindable: member.Kind is "styled-property" or "direct-property",
             IsInherited: false,
             IsCurated: true,
             IsDeprecated: false,
             Since: null,
             Replacement: null,
-            description);
+            member.Description);
     }
 
-    private static InfoTemplatePartPayload TemplatePart(string name, string type, string source, string description)
+    private static IReadOnlyList<InfoTokenSummaryPayload> CreateTokenSummaries(ControlDocument document)
     {
-        return new InfoTemplatePartPayload(name, type, IsRequired: true, source, description);
+        if (document.Tokens.Count == 0)
+        {
+            return [];
+        }
+
+        var summaries = new List<InfoTokenSummaryPayload>
+        {
+            new(
+                $"{document.Name}Token",
+                "control",
+                "Token",
+                "generated",
+                null,
+                $"{document.Name}TokenResource",
+                $"Control token resource set generated from {document.Name} token source.")
+        };
+        summaries.AddRange(document.Tokens
+            .Take(24)
+            .Select(token => new InfoTokenSummaryPayload(
+                token.Name,
+                token.Scope,
+                "Token",
+                token.Status,
+                null,
+                $"{document.Name}TokenResource {token.Name}",
+                token.Description)));
+
+        return summaries;
     }
 
-    private static InfoControlStatePayload State(string name, string kind, string description, string source)
+    private static string NormalizeMemberKind(string kind)
     {
-        return new InfoControlStatePayload(name, kind, description, source);
-    }
-
-    private static InfoTokenSummaryPayload Token(
-        string name,
-        string scope,
-        string type,
-        string status,
-        string? defaultValue,
-        string? resourceKey,
-        string description)
-    {
-        return new InfoTokenSummaryPayload(name, scope, type, status, defaultValue, resourceKey, description);
-    }
-
-    private static InfoDemoSummaryPayload Demo(
-        string name,
-        string title,
-        string description,
-        string route,
-        IReadOnlyList<string> tags)
-    {
-        return new InfoDemoSummaryPayload(name, title, description, route, tags);
+        return kind switch
+        {
+            "styled-property" => "styled",
+            "direct-property" => "direct",
+            "protected-method" => "protected",
+            "public-method" => "public",
+            "constructor" => "constructor",
+            _ => kind
+        };
     }
 
     private static IReadOnlyList<InfoRelatedCommandPayload> CreateRelatedCommands(string controlName)

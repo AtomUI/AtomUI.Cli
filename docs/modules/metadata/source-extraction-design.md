@@ -1,5 +1,11 @@
 # Metadata Source Extraction 详细设计
 
+## 文档定位
+
+本文档是 [Source Analysis Pipeline 架构设计](../../architecture/source-analysis-pipeline-design.md) 的 Metadata 模块落地细节，描述各类构建期 processor 的输入源、抽取规则、冲突处理和测试要求。
+
+全局架构边界以 Source Analysis Pipeline 文档为准：所有需要 AtomUI 源码事实的命令都必须消费构建期生成的 snapshot，不允许在运行时读取源码、解析 AXAML、反射控件程序集或在命令 handler 中手写补丁数据。
+
 ## 目标
 
 AtomUI Cli 的 metadata 不是运行时反射产物，而是构建期从 AtomUI 源码、Gallery、文档、构建配置和变更记录生成的离线快照。`tools/AtomUI.Cli.MetadataBuilder` 负责读取这些输入，并生成 CLI 运行时可直接加载的内置快照。
@@ -68,27 +74,29 @@ AtomUI 源码根目录由构建期工具解析，运行时 CLI 不读取源码�
 - 生成结果不得写入本机绝对源码路径，只能写入逻辑路径和源码身份字段。
 - 未传入源码根且默认路径不存在时，构建期工具必须返回明确错误，提示配置 `--source-root`、`AtomUIDocSourceRoot` 或 `ATOMUI_SOURCE_ROOT`。
 
-## Adapter 分层
+## Processor 分层
 
 ```text
 MetadataBuilder
+  -> SourceAnalysisPipeline
   -> SourceWorkspaceReader
-  -> ProductProjectAdapter
-  -> GalleryNavigationAdapter
-  -> GalleryShowCaseAdapter
-  -> MarkdownControlDocAdapter
-  -> ControlSourceAdapter
-  -> AvaloniaEventContractAdapter
-  -> ControlThemeAdapter
-  -> TokenAdapter
-  -> LocalizationAdapter
-  -> ChangelogAdapter
+  -> PackageCatalogProcessor
+  -> GalleryCatalogProcessor
+  -> GalleryShowCaseProcessor
+  -> MarkdownDocProcessor
+  -> ControlSourceProcessor
+  -> AvaloniaEventContractProcessor
+  -> ControlThemeProcessor
+  -> SemanticContractProcessor
+  -> TokenProcessor
+  -> LocalizationProcessor
+  -> ChangelogProcessor
   -> SnapshotAssembler
   -> SnapshotValidator
   -> SnapshotCodeWriter / SnapshotCompressor
 ```
 
-每个 adapter 输出中间模型，不直接写最终运行时数据。Token snapshot 当前由 `SnapshotCodeWriter` 生成 C#；完整 metadata/documentation snapshot 后续可以继续生成 JSON 或压缩 JSON，但不得回退到运行时扫描。
+每个 processor 输出中间事实模型，不直接写最终运行时数据。Token snapshot 当前由 `SnapshotCodeWriter` 生成 C#；完整 metadata/documentation/semantic snapshot 后续可以继续生成 C# 或压缩 JSON，但不得回退到运行时扫描。
 
 ## SourceWorkspaceReader
 
@@ -106,22 +114,25 @@ MetadataBuilder
 - 不执行 MSBuild target。
 - 不 restore 包。
 
-## ProductProjectAdapter
+## PackageCatalogProcessor
 
-从项目文件构建产品和包模型：
+从项目文件、版本文件、Gallery 控件事实和模块文档构建产品和包模型：
 
-| 项目模式 | 产品推断 |
+| 输入 | 用途 |
 | --- | --- |
-| `AtomUI.Controls` | shared controls。 |
-| `AtomUI.Desktop.Controls` | desktop controls。 |
-| `AtomUI.Desktop.Controls.DataGrid` | datagrid product。 |
-| `AtomUI.Desktop.Controls.ColorPicker` | color picker product。 |
-| `AtomUI.Icons.*` | icon product。 |
-| `AtomUI.Fonts.*` | font product。 |
+| `src/AtomUI.Desktop.Controls*.csproj` | 控件生态包候选。 |
+| `build/Version.props` | 读取 `AtomUIVersion`，作为 package version。 |
+| `control:*` facts | 反推 package 控件归属。 |
+| `docs/modules/**/overview.md` | 读取 package/product 说明文本。 |
 
-产品推断只是初始值。最终产品清单必须允许通过显式 `metadata.config.json` 覆盖 display name、visibility、冲突关系和注册方法。
+规则：
 
-## GalleryNavigationAdapter
+- 没有控件归属的项目不进入命令 catalog，避免把内部工具包误暴露为控件包。
+- optional/commercial visibility 由 package/product 归属统一标注。
+- 运行时 `MetadataCatalog.CreateFallback` 不允许保存真实 package/product 列表。
+- 产品推断只是初始值。最终产品清单必须允许通过显式 `metadata.config.json` 覆盖 display name、visibility、冲突关系和注册方法。
+
+## GalleryCatalogProcessor
 
 从 Gallery 配置提取：
 
@@ -136,6 +147,8 @@ MetadataBuilder
 - 使用 Roslyn syntax tree 查找 `AddGroup`、`AddPage` 调用链。
 - 不执行 Gallery 代码。
 - 对无法解析的表达式保留原始文本和 warning。
+- 只输出 category/control facts，不生成 package、design topic 或 changelog。
+- 控件简介优先来自 `docs/AI/llms/controls/<control>/index-cn.md`，不能写手工控件说明兜底表。
 
 ## GalleryShowCaseAdapter
 
@@ -162,7 +175,7 @@ Gallery 示例是 Demo、usage、examples 和常见场景的主输入之一。
 - `SourceKey` 缺失时用 `panel-name + item-index` 生成稳定 key，并输出 warning。
 - `--examples all` 依赖该 adapter 输出完整示例集合，不允许在文档快照阶段丢弃文档级稳定示例。
 
-## MarkdownControlDocAdapter
+## MarkdownDocProcessor
 
 控件文档是 `doc` 命令的人工维护事实源之一。
 
@@ -178,6 +191,25 @@ Gallery 示例是 Demo、usage、examples 和常见场景的主输入之一。
 - Markdown adapter 不发明 API、事件或 ControlTheme 结构，只抽取人工维护的定位、解释、边界和源码索引。
 - 文档中记录的源码路径必须校验存在；不存在时输出 diagnostic。
 - 文档和源码/Gallery 冲突时，进入 SnapshotAssembler 的冲突处理，不静默选择一方。
+- `topic/design-language` 由 `docs/overview.md`、`docs/controls/overview.md`、控件研发规范、控件文档规范、Token 规范和 Gallery 示例规范生成，供 `design.md` 和 `doc --topic design-language` 共同消费。
+
+## ChangelogProcessor
+
+Changelog 是 `changelog` 命令和文档长尾 section 的版本事实源。
+
+读取内容：
+
+- 根目录 `CHANGELOG.md` 的版本块。
+- 版本发布日期。
+- 顶层分组和嵌套 bullet 条目。
+- 条目中出现的控件名，用于补充 control target。
+
+规则：
+
+- 缺失 `CHANGELOG.md` 时输出 warning 和空列表，不生成伪条目。
+- 条目正文来自源码 changelog，只允许做术语清洗和空白归一化。
+- release 级条目 target 为 `release/AtomUI`；能匹配控件名时额外生成 `control/<control>` 条目。
+- 不允许在 `GalleryCatalogProcessor` 或 runtime fallback 中维护 changelog 数据。
 
 ## ControlSourceAdapter
 

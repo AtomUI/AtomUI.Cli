@@ -3,13 +3,27 @@ namespace AtomUI.Cli.MetadataBuilder;
 internal sealed record BuilderOptions(
     string SourceRoot,
     string OutputPath,
-    string TargetVersion)
+    string TargetVersion,
+    string SourceRef,
+    string OutputRoot,
+    IReadOnlySet<string> RequiredSnapshots)
 {
+    public string TokenOutputPath => OutputPath;
+
     public static BuilderOptions Parse(IReadOnlyList<string> args)
     {
         string? sourceRoot = null;
         string? output = null;
+        string? outputRoot = null;
         var targetVersion = "6.0";
+        var sourceRef = "release/6.0";
+        var requiredSnapshots = new SortedSet<string>(StringComparer.Ordinal)
+        {
+            "catalog",
+            "document",
+            "semantic",
+            "token"
+        };
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -22,9 +36,23 @@ internal sealed record BuilderOptions(
             {
                 output = ReadValue(args, ref i, arg);
             }
+            else if (arg.Equals("--output-root", StringComparison.Ordinal))
+            {
+                outputRoot = ReadValue(args, ref i, arg);
+            }
             else if (arg.Equals("--target-version", StringComparison.Ordinal))
             {
                 targetVersion = ReadValue(args, ref i, arg);
+            }
+            else if (arg.Equals("--source-ref", StringComparison.Ordinal))
+            {
+                sourceRef = ReadValue(args, ref i, arg);
+            }
+            else if (arg.Equals("--snapshots", StringComparison.Ordinal))
+            {
+                requiredSnapshots = new SortedSet<string>(ReadValue(args, ref i, arg)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(value => value.ToLowerInvariant()), StringComparer.Ordinal);
             }
             else
             {
@@ -33,20 +61,22 @@ internal sealed record BuilderOptions(
         }
 
         sourceRoot = ResolveSourceRoot(sourceRoot);
+        if (string.IsNullOrWhiteSpace(output) && string.IsNullOrWhiteSpace(outputRoot))
+        {
+            throw new InvalidOperationException("Missing required --output or --output-root argument.");
+        }
+
+        if (string.IsNullOrWhiteSpace(outputRoot))
+        {
+            outputRoot = Path.GetDirectoryName(output) ?? ".";
+        }
+
         if (string.IsNullOrWhiteSpace(output))
         {
-            throw new InvalidOperationException("Missing required --output argument.");
+            output = Path.Combine(outputRoot, "BuiltInTokenSnapshot.g.cs");
         }
 
-        sourceRoot = Path.GetFullPath(sourceRoot);
-        output = Path.GetFullPath(output);
-
-        if (!Directory.Exists(sourceRoot))
-        {
-            throw new DirectoryNotFoundException($"AtomUI source root '{sourceRoot}' does not exist. Configure --source-root, AtomUIDocSourceRoot, or ATOMUI_SOURCE_ROOT.");
-        }
-
-        return new BuilderOptions(sourceRoot, output, targetVersion);
+        return new BuilderOptions(sourceRoot, output, targetVersion, sourceRef, outputRoot, requiredSnapshots);
     }
 
     private static string ResolveSourceRoot(string? explicitSourceRoot)

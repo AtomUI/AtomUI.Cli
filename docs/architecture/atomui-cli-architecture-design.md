@@ -635,6 +635,8 @@ Metadata & Knowledge 模块是 CLI 的知识层。它把 AtomUI 生态信息组�
 
 数据来源分为内置公开快照和外部数据根。内置快照随 tool 包发布，外部数据根用于内部或商业数据扩展。查询服务不通过运行时反射补齐缺失数据；快照缺失时返回结构化错误。
 
+内置公开快照由统一构建期 [Source Analysis Pipeline](source-analysis-pipeline-design.md) 生成。`info`、`doc`、`demo`、`token`、`semantic`、`list`、`package` 和 `changelog` 等命令只能消费 Pipeline 投影出的运行时 snapshot，不允许在命令 handler、query service 或 renderer 中自行读取 AtomUI 源码、解析 AXAML、反射控件程序集或手写补丁数据。
+
 ## 13. 元数据模型
 
 元数据快照围绕版本、产品、控件、包、Token、示例、文档、变更记录和迁移信息建模。
@@ -645,6 +647,8 @@ MetadataSnapshot
   ├── ProductCatalog
   ├── PackageCatalog
   ├── ControlCatalog
+  ├── ApiSurfaceCatalog
+  ├── SemanticCatalog
   ├── TokenCatalog
   ├── DemoCatalog
   ├── DocumentationCatalog

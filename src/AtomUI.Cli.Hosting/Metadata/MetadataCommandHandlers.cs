@@ -1436,7 +1436,10 @@ public sealed class TokenCommandHandler(
     }
 }
 
-public sealed class SemanticCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<SemanticCommandOptions>
+public sealed class SemanticCommandHandler(
+    MetadataQueryService metadata,
+    SemanticQueryService semantic,
+    SemanticOutputRenderer renderer) : IAtomUICliCommandHandler<SemanticCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(SemanticCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
@@ -1450,13 +1453,25 @@ public sealed class SemanticCommandHandler(MetadataQueryService metadata) : IAto
             return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.ControlNotFound, $"Control '{options.Control}' was not found."));
         }
 
-        var parts = metadata.FindSemanticParts(options.Control, options.Part);
-        if (options.Part is not null && parts.Count == 0)
+        var payload = semantic.Query(options);
+        if (payload is null)
+        {
+            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.ControlNotFound, $"Control '{options.Control}' was not found."));
+        }
+
+        if (options.Part is not null && payload.Parts.Count == 0)
         {
             return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.SemanticPartNotFound, $"Semantic part '{options.Part}' was not found."));
         }
 
-        return ValueTask.FromResult(AtomUICliResult.Success(string.Join(Environment.NewLine, parts.Select(part => $"{part.Name}: {part.Description}"))));
+        object resultPayload = options.Global.Format switch
+        {
+            OutputFormat.Json => payload,
+            OutputFormat.Markdown => renderer.RenderMarkdown(payload, options.Global.Detail || options.IncludeTemplate),
+            _ => renderer.RenderText(payload, options.Global.Detail || options.IncludeTemplate)
+        };
+
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
     }
 }
 

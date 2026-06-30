@@ -4,22 +4,25 @@
     <RootNamespace>AtomUI.Cli.Hosting</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
     <AtomUICliRepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '..', '..'))</AtomUICliRepoRoot>
-    <AtomUITokenSourceRoot Condition="'$(AtomUITokenSourceRoot)' == '' and '$(AtomUIDocSourceRoot)' != ''">$(AtomUIDocSourceRoot)</AtomUITokenSourceRoot>
-    <AtomUITokenSourceRoot Condition="'$(AtomUITokenSourceRoot)' == '' and '$(ATOMUI_SOURCE_ROOT)' != ''">$(ATOMUI_SOURCE_ROOT)</AtomUITokenSourceRoot>
-    <AtomUITokenSourceRoot Condition="'$(AtomUITokenSourceRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(AtomUICliRepoRoot)', '..', 'ReferenceProjects', 'AtomUI'))</AtomUITokenSourceRoot>
-    <AtomUITokenSnapshotGeneratedFile>$(BaseIntermediateOutputPath)Generated/Metadata/BuiltInTokenSnapshot.g.cs</AtomUITokenSnapshotGeneratedFile>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(AtomUIDocSourceRoot)' != ''">$(AtomUIDocSourceRoot)</AtomUISourceRoot>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(AtomUITokenSourceRoot)' != ''">$(AtomUITokenSourceRoot)</AtomUISourceRoot>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(ATOMUI_SOURCE_ROOT)' != ''">$(ATOMUI_SOURCE_ROOT)</AtomUISourceRoot>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(AtomUICliRepoRoot)', '..', 'ReferenceProjects', 'AtomUI'))</AtomUISourceRoot>
+    <AtomUISourceRef Condition="'$(AtomUISourceRef)' == ''">release/6.0</AtomUISourceRef>
+    <AtomUITargetVersion Condition="'$(AtomUITargetVersion)' == ''">6.0</AtomUITargetVersion>
+    <AtomUISourceAnalysisGeneratedRoot>$(BaseIntermediateOutputPath)Generated/Metadata</AtomUISourceAnalysisGeneratedRoot>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Include="$(AtomUITokenSnapshotGeneratedFile)" Visible="false" />
-  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
     <ProjectReference Include="../AtomUI.Cli.Modularity/AtomUI.Cli.Modularity.csproj" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
-  <Target Name="GenerateBuiltInTokenSnapshot" BeforeTargets="CoreCompile">
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(AtomUITokenSnapshotGeneratedFile)'))" />
-    <Exec Command="dotnet run --project &quot;$(AtomUICliRepoRoot)tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj&quot; -- --source-root &quot;$(AtomUITokenSourceRoot)&quot; --output &quot;$(AtomUITokenSnapshotGeneratedFile)&quot; --target-version &quot;6.0&quot;" />
+  <Target Name="GenerateBuiltInSourceAnalysisSnapshots" BeforeTargets="CoreCompile">
+    <MakeDir Directories="$(AtomUISourceAnalysisGeneratedRoot)" />
+    <Exec Command="dotnet run --project &quot;$(AtomUICliRepoRoot)tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj&quot; -- --source-root &quot;$(AtomUISourceRoot)&quot; --target-version &quot;$(AtomUITargetVersion)&quot; --source-ref &quot;$(AtomUISourceRef)&quot; --output-root &quot;$(AtomUISourceAnalysisGeneratedRoot)&quot;" />
+    <ItemGroup>
+      <Compile Include="$(AtomUISourceAnalysisGeneratedRoot)/*.g.cs" Visible="false" />
+    </ItemGroup>
   </Target>
 </Project>
