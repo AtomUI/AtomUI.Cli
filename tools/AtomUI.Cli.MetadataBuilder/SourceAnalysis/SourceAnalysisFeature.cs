@@ -4,6 +4,7 @@ internal enum SourceAnalysisFeature
 {
     Workspace,
     ProductCatalog,
+    PackageCatalog,
     ControlCatalog,
     ControlApi,
     AvaloniaProperty,

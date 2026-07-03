@@ -57,6 +57,22 @@ internal sealed partial class MarkdownDocProcessor : ISourceAnalysisProcessor
 
     private static IEnumerable<string> ResolveDesignSourceFiles(string sourceRoot)
     {
+        var dedicatedFiles = new[]
+        {
+            Path.Combine(sourceRoot, "DESIGN.md"),
+            Path.Combine(sourceRoot, "docs", "design.md"),
+            Path.Combine(sourceRoot, "docs", "design-language.md")
+        }.Where(File.Exists).ToArray();
+        if (dedicatedFiles.Length > 0)
+        {
+            foreach (var dedicatedFile in dedicatedFiles)
+            {
+                yield return dedicatedFile;
+            }
+
+            yield break;
+        }
+
         yield return Path.Combine(sourceRoot, "docs", "overview.md");
         yield return Path.Combine(sourceRoot, "docs", "controls", "overview.md");
         yield return Path.Combine(sourceRoot, "docs", "engineering", "control-development-guidelines.md");

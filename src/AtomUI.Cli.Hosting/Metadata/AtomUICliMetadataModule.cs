@@ -19,6 +19,7 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
         context.Services.AddSingleton<MetadataQueryService, MetadataQueryService>();
         context.Services.AddSingleton(DocumentSnapshotRegistry.CreateDefault());
         context.Services.AddSingleton<DocumentationQueryService, DocumentationQueryService>();
+        context.Services.AddSingleton<DesignDocumentQueryService, DesignDocumentQueryService>();
         context.Services.AddSingleton<DocumentSectionSelector, DocumentSectionSelector>();
         context.Services.AddSingleton<DocOutputRenderer, DocOutputRenderer>();
         context.Services.AddSingleton<DemoQueryService, DemoQueryService>();
@@ -29,6 +30,9 @@ public sealed partial class AtomUICliMetadataModule : AtomUICliModule
         context.Services.AddSingleton(SemanticSnapshotRegistry.CreateDefault());
         context.Services.AddSingleton<SemanticQueryService, SemanticQueryService>();
         context.Services.AddSingleton<SemanticOutputRenderer, SemanticOutputRenderer>();
+        context.Services.AddSingleton(PackageSnapshotRegistry.CreateDefault());
+        context.Services.AddSingleton<PackageQueryService, PackageQueryService>();
+        context.Services.AddSingleton<PackageOutputRenderer, PackageOutputRenderer>();
         context.Services.AddTransient<ListCommandHandler, ListCommandHandler>();
         context.Services.AddTransient<InfoCommandHandler, InfoCommandHandler>();
         context.Services.AddTransient<DocCommandHandler, DocCommandHandler>();

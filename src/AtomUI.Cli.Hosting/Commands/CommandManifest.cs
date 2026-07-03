@@ -233,7 +233,7 @@ public sealed class CommandManifestCatalog
                 "design.md",
                 "Generate design guidance for AtomUI implementation.",
                 "dotnet atomui design.md [options]",
-                ["dotnet atomui design.md", "dotnet atomui design.md --section accessibility"],
+                ["dotnet atomui design.md", "dotnet atomui design.md --section tokens", "dotnet atomui design.md --format json"],
                 120,
                 options:
                 [
@@ -244,13 +244,18 @@ public sealed class CommandManifestCatalog
                 "package",
                 "Show package or product information.",
                 "dotnet atomui package [package-or-product] [options]",
-                ["dotnet atomui package", "dotnet atomui package AtomUI.Desktop.Controls"],
+                ["dotnet atomui package", "dotnet atomui package desktop", "dotnet atomui package AtomUI.Desktop.Controls --include dependencies,registration,controls"],
                 130,
                 arguments: [new CommandArgumentHelp("package-or-product", "Optional package or product id.", IsRequired: false)],
                 options:
                 [
+                    new CommandOptionHelp("--kind", "Limit target resolution.", "package|product|all"),
+                    new CommandOptionHelp("--include", "Expand package information.", "dependencies,controls,registration,compatibility,conflicts,replacements,source,diagnostics,all"),
+                    new CommandOptionHelp("--tree", "Include package dependency tree."),
+                    new CommandOptionHelp("--commercial", "Only list commercial packages."),
+                    new CommandOptionHelp("--include-hidden", "Include hidden packages."),
                     new CommandOptionHelp("--strict", "Disable fuzzy matching."),
-                    new CommandOptionHelp("--include-compatibility", "Include compatibility information.")
+                    new CommandOptionHelp("--product", "Filter by product.", "product")
                 ]),
             Knowledge(
                 "changelog",

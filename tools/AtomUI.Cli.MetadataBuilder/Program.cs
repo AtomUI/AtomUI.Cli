@@ -71,6 +71,14 @@ internal static class Program
                 Console.WriteLine($"Generated AtomUI document snapshot: {snapshot.Controls.Count} controls.");
             }
 
+            if (options.RequiredSnapshots.Contains("package"))
+            {
+                var snapshot = PackageSnapshotProjection.Create(context);
+                var outputPath = Path.GetFullPath(Path.Combine(options.OutputRoot, "BuiltInPackageSnapshot.g.cs"));
+                PackageSnapshotCodeWriter.Write(snapshot, outputPath);
+                Console.WriteLine($"Generated AtomUI package snapshot: {snapshot.Packages.Count} packages.");
+            }
+
             return 0;
         }
         catch (Exception exception)
@@ -98,10 +106,18 @@ internal static class Program
             else if (snapshot.Equals("catalog", StringComparison.OrdinalIgnoreCase))
             {
                 features.Add(SourceAnalysisFeature.ControlCatalog);
+                features.Add(SourceAnalysisFeature.PackageCatalog);
                 features.Add(SourceAnalysisFeature.ProductCatalog);
                 features.Add(SourceAnalysisFeature.GalleryNavigation);
                 features.Add(SourceAnalysisFeature.MarkdownDoc);
                 features.Add(SourceAnalysisFeature.Changelog);
+            }
+            else if (snapshot.Equals("package", StringComparison.OrdinalIgnoreCase))
+            {
+                features.Add(SourceAnalysisFeature.ControlCatalog);
+                features.Add(SourceAnalysisFeature.PackageCatalog);
+                features.Add(SourceAnalysisFeature.ProductCatalog);
+                features.Add(SourceAnalysisFeature.CommercialVisibility);
             }
             else if (snapshot.Equals("document", StringComparison.OrdinalIgnoreCase))
             {

@@ -213,7 +213,7 @@ public enum SourceAnalysisFeature
 | `demo` | `GalleryDemo`、`Localization`、`ControlCatalog`。 |
 | `token` | `TokenDefinition`、`TokenGraph`、`TokenUsage`、`ControlTheme`。 |
 | `semantic` | `TemplatePart`、`PseudoClass`、`ControlTheme`、`ThemeVisualTree`、`ThemeSelector`、`TemplateBinding`、`TokenUsage`、`SemanticContract`。 |
-| `package` | `ProductCatalog`、`ControlCatalog`、`CommercialVisibility`。 |
+| `package` | `PackageCatalog`、`ProductCatalog`、`ControlCatalog`、`CommercialVisibility`。 |
 | `changelog` | `Changelog`、`ControlCatalog`、`ProductCatalog`。 |
 
 ### 8.2 Processor Registry
@@ -492,8 +492,10 @@ Semantic part 的 `Sources` 至少区分：
 
 - 读取 `src/AtomUI.Desktop.Controls*.csproj` 中的控件生态包项目。
 - 读取 `build/Version.props` 中的 `AtomUIVersion`，作为 package version。
+- 读取 `Directory.Packages.props` 和 build props，解析 `PackageReference`、`ProjectReference` 以及 MSBuild 属性版本。
 - 从 Gallery 控件事实反推 package 和 product 的控件归属。
 - 从 `docs/modules/**/overview.md` 提取 package/product 说明文本。
+- 生成 package 依赖、注册入口、target frameworks、compatibility、source files 和 diagnostics。
 - 标注 optional package 和 commercial package 可见性。
 
 规则：
@@ -530,7 +532,8 @@ Gallery 示例是 `demo`、`doc examples`、`info demos` 的共同事实源。
 职责：
 
 - 读取控件文档中的人工解释、行为边界、维护不变量、兼容性说明。
-- 读取 `docs/overview.md`、`docs/controls/overview.md`、控件研发规范、控件文档规范、Token 规范和 Gallery 示例规范。
+- 优先读取 `DESIGN.md`、`docs/design.md` 或 `docs/design-language.md` 作为专用设计语言文档。
+- 源码未提供专用设计语言文档时，读取 `docs/overview.md`、`docs/controls/overview.md`、控件研发规范、控件文档规范、Token 规范和 Gallery 示例规范。
 - 生成 `topic/design-language` 文档事实，供 `design.md` 和 `doc --topic design-language` 共同消费。
 - 校验文档引用的源码路径存在。
 - 为 API、semantic part、Token 提供 description override 和 recommendation。
@@ -582,7 +585,8 @@ Assembler 负责把多个 processor 的 facts 合并为 `AtomUISourceModel`。
 
 | 快照 | 消费命令 | 来源 |
 | --- | --- | --- |
-| `CatalogSnapshot` | `list`、`package`、`help` 摘要、`design.md`、`changelog` | 产品、包、控件、Gallery 分类、源码文档 topic、CHANGELOG 条目。 |
+| `CatalogSnapshot` | `list`、`help` 摘要、`design.md`、`changelog` | 产品、包摘要、控件、Gallery 分类、源码文档 topic、CHANGELOG 条目。 |
+| `PackageSnapshot` | `package` | 产品、NuGet 包、包依赖、注册入口、兼容性、冲突关系、替代关系和包内控件清单。 |
 | `InfoSnapshot` | `info` | 控件 API、事件、Token 摘要、semantic 摘要、示例摘要。 |
 | `DocumentSnapshot` | `doc` | 控件文档、API、逻辑结构、ControlTheme、示例、Token、semantic。 |
 | `DemoSnapshot` | `demo` | Gallery 示例、代码片段、场景分类、来源。 |
@@ -710,6 +714,7 @@ output/obj/AtomUI.Cli.Hosting/Generated/Metadata/
   BuiltInDemoSnapshot.g.cs
   BuiltInTokenSnapshot.g.cs
   BuiltInSemanticSnapshot.g.cs
+  BuiltInPackageSnapshot.g.cs
   BuiltInChangelogSnapshot.g.cs
 ```
 

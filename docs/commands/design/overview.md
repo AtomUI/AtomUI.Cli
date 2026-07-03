@@ -2,7 +2,9 @@
 
 ## 定位
 
-`design.md` 是 P0 只读知识查询命令，用于输出 AtomUI 设计语言、布局原则、主题 Token、可访问性和控件选型建议的 Markdown 文档。
+`design.md` 是 P0 只读知识查询命令，用于输出 AtomUI 设计语言、控件研发规范、Token 使用规则和 Gallery 模式的 Markdown 文档。
+
+命令运行时只读取内置文档快照，不访问网络，不扫描源码目录。默认输出 Markdown 正文；JSON 输出结构化 payload，正文位于 `payload.doc`。
 
 ## 所属模块
 
@@ -13,7 +15,8 @@
 ```bash
 dotnet atomui design.md
 dotnet atomui design.md --section tokens
-dotnet atomui design.md --product desktop --format markdown
+dotnet atomui design.md --audience agent
+dotnet atomui design.md --target-version 6.0
 dotnet atomui design.md --format json
 ```
 
@@ -21,56 +24,65 @@ dotnet atomui design.md --format json
 
 | 参数或选项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--section <name>` | `all` | 可选 `all`、`principles`、`layout`、`tokens`、`accessibility`、`patterns`、`controls`。 |
-| `--product <id>` | 全产品 | 产品相关设计建议过滤。 |
-| `--target-version <version>` | 默认版本 | 目标版本。 |
-| `--format <text|json|markdown>` | `markdown` | 默认输出 Markdown。 |
+| `--section <name>` | `all` | 可选 `all`、`overview`、`principles`、`layout`、`tokens`、`accessibility`、`patterns`、`controls`。 |
+| `--audience <developer|agent>` | `developer` | 面向开发者或 Agent 输出。 |
+| `--target-version <version>` | 最新内置文档快照 | 目标版本。 |
+| `--format <text|json|markdown>` | `text` | text 与 markdown 都输出 Markdown 正文；json 输出结构化 payload。 |
 
 ## 输入
 
-- 设计语言文档快照。
-- 全局 Token 快照。
-- 产品和控件分类信息。
+- `DocumentSnapshot` 中的 topic `design-language`。
+- topic 的 `Source` 信息，包括 snapshot id、source commit、generated at。
+- `MarkdownDocProcessor` 在构建期保留的 `<!-- Source: ... -->` source marker。
 
 ## 输出
 
-markdown 输出面向 Agent 和文档系统：
+text/markdown 输出：
 
 ```markdown
-# AtomUI Design
-
-## Principles
-
-## Layout
-
-## Tokens
-
-## Accessibility
-
-## Patterns
-
-## Control Selection
+<!-- Source: docs/overview.md -->
+# AtomUI 文档总览
+...
 ```
 
-json 输出以 section 数组表达，便于 Agent 按需截取上下文。
+json 输出：
+
+```json
+{
+  "schemaVersion": "1.0",
+  "success": true,
+  "command": "design.md",
+  "payload": {
+    "command": "design.md",
+    "targetVersion": "6.0",
+    "section": "all",
+    "audience": "developer",
+    "doc": "<!-- Source: docs/overview.md -->\n# AtomUI 文档总览\n...",
+    "source": {
+      "snapshotId": "atomui-docs-source-..."
+    },
+    "warnings": []
+  }
+}
+```
 
 ## Handler 与服务依赖
 
 | 类型 | 生命周期 | 说明 |
 | --- | --- | --- |
-| `DesignMarkdownCommandOptions` | Scoped value | section、产品和格式选项。 |
-| `DesignMarkdownCommandHandler` | Transient | 聚合设计文档区块。 |
-| `IDesignDocumentQueryService` | Singleton | 设计文档查询。 |
-| `ITokenQueryService` | Singleton | Token 文档引用。 |
-| `IProductCatalogLoader` | Singleton | 产品相关过滤。 |
+| `DesignCommandOptions` | Scoped value | section、audience 和全局选项。 |
+| `DesignCommandHandler` | Transient | 执行命令并选择输出格式。 |
+| `DesignDocumentQueryService` | Singleton | 查询设计文档、裁剪 section、构建 payload。 |
+| `DocumentSnapshotRegistry` | Singleton | 内置文档快照注册表。 |
 
 ## 执行流程
 
-1. 校验 `--section`。
-2. 解析目标版本和产品过滤。
-3. 查询设计文档区块。
-4. 合并 Token 和控件分类引用。
-5. 按固定 section 顺序输出。
+1. 校验 `--section` 和 `--audience`。
+2. 按 `--target-version` 和 `--lang` 选择文档快照。
+3. 查找 topic `design-language`。
+4. 按 section 映射到 source block；若专用设计文档无法按 source block 切分，则按 Markdown 标题别名裁剪。
+5. text/markdown 返回 Markdown 正文。
+6. json 返回结构化 payload。
 
 ## 错误码与退出码
 
@@ -78,25 +90,24 @@ json 输出以 section 数组表达，便于 Agent 按需截取上下文。
 
 | 错误码 | 退出码 | 场景 |
 | --- | --- | --- |
-| `ATOMUICLI_ARG002` | `2` | `--section` 非法。 |
-| `ATOMUICLI_PKG001` | `3` | 指定产品不存在。 |
-| `ATOMUICLI_DATA001` | `4` | 设计文档数据不可用。 |
-| `ATOMUICLI_DATA005` | `4` | 目标版本无法解析到可用快照。 |
+| `ATOMUICLI_ARG002` | `2` | `--section` 或 `--audience` 非法。 |
+| `ATOMUICLI_DATA001` | `4` | 当前快照缺少设计文档 topic。 |
+| `ATOMUICLI_DATA005` | `4` | 目标版本无法解析到可用文档快照。 |
 
 ## AOT 约束
 
-- 设计文档来自内置快照，不读取远程文档。
-- Markdown 渲染不使用运行时模板编译。
-- JSON section DTO 纳入 source generated context。
+- 设计文档来自内置快照。
+- 不读取远程文档。
+- 不在命令 handler 中读取 AtomUI 源码。
+- JSON payload 通过统一 JSON writer 输出。
 
 ## 测试点
 
-- 默认输出包含所有设计 section。
-- `--section tokens` 只输出 Token 相关内容。
-- 产品过滤影响控件选型建议。
-- markdown 输出标题稳定。
-- json 输出 section 顺序稳定。
-- 目标版本不存在时返回 `ATOMUICLI_DATA005`。
+- 默认输出包含完整 Markdown 和 source marker。
+- `--format json` 输出结构化 payload，`payload.doc` 存在。
+- `--target-version` 不匹配时返回 `ATOMUICLI_DATA005`。
+- `--section tokens` 输出 Token source block。
+- `--audience agent` 输出 Agent marker。
 
 ## 相关文档
 

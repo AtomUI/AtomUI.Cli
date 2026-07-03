@@ -585,6 +585,104 @@ public sealed class MetadataCommandTests
     }
 
     [Fact]
+    public async Task DesignDefaultOutputsRawMarkdownDocument()
+    {
+        var result = await DispatchDesignAsync(["design.md"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        Assert.StartsWith("<!-- Source: docs/overview.md -->", output, StringComparison.Ordinal);
+        Assert.Contains("# AtomUI 文档总览", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("AtomUI metadata", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DesignJsonReturnsStructuredDocumentPayload()
+    {
+        var result = await DispatchDesignAsync(["--format", "json", "design.md"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        using var document = JsonDocument.Parse(output);
+        var payload = document.RootElement.GetProperty("payload");
+
+        Assert.Equal("design.md", payload.GetProperty("command").GetString());
+        Assert.Equal("6.0", payload.GetProperty("targetVersion").GetString());
+        Assert.Equal("all", payload.GetProperty("section").GetString());
+        Assert.Equal("developer", payload.GetProperty("audience").GetString());
+        Assert.StartsWith("<!-- Source: docs/overview.md -->", payload.GetProperty("doc").GetString(), StringComparison.Ordinal);
+        Assert.StartsWith("atomui-docs-source-", payload.GetProperty("source").GetProperty("snapshotId").GetString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("\"payload\":\"", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DesignSectionOutputsSelectedSourceBlock()
+    {
+        var result = await DispatchDesignAsync(["design.md", "--section", "tokens"]);
+
+        Assert.True(result.Result.IsSuccess);
+        var output = Assert.Single(result.Output.Lines);
+        Assert.StartsWith("<!-- Source: docs/engineering/control-token-guidelines.md -->", output, StringComparison.Ordinal);
+        Assert.Contains("AtomUI 控件 Token 设计规范", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("<!-- Source: docs/overview.md -->", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DesignSectionFallsBackToHeadingSelectionForDedicatedDesignDocument()
+    {
+        const string markdown = """
+                                <!-- Source: docs/design.md -->
+                                # AtomUI Design
+
+                                ## Overview
+
+                                Overview guidance.
+
+                                ## Tokens
+
+                                Token guidance.
+
+                                ### Token Naming
+
+                                Token naming details.
+
+                                ## Layout
+
+                                Layout guidance.
+                                """;
+        var service = new DesignDocumentQueryService(CreateDocumentSnapshotRegistry(markdown));
+        var result = service.Query(new DesignCommandOptions(new GlobalCliOptions(TargetVersion: "6.0"), "tokens", "developer"));
+
+        Assert.True(result.IsFound);
+        var doc = result.Payload?.Doc;
+        Assert.NotNull(doc);
+        Assert.StartsWith("## Tokens", doc, StringComparison.Ordinal);
+        Assert.Contains("Token naming details.", doc, StringComparison.Ordinal);
+        Assert.DoesNotContain("## Overview", doc, StringComparison.Ordinal);
+        Assert.DoesNotContain("## Layout", doc, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DesignInvalidSectionReturnsArgumentError()
+    {
+        var result = await DispatchDesignAsync(["design.md", "--section", "bad"]);
+
+        Assert.False(result.Result.IsSuccess);
+        Assert.Equal(AtomUICliErrorCodes.ArgumentInvalidValue, result.Result.Error?.Code);
+        Assert.Empty(result.Output.Lines);
+    }
+
+    [Fact]
+    public async Task DesignMissingTargetVersionReturnsDataError()
+    {
+        var result = await DispatchDesignAsync(["--target-version", "9.0", "design.md"]);
+
+        Assert.False(result.Result.IsSuccess);
+        Assert.Equal(AtomUICliErrorCodes.DataVersionUnresolved, result.Result.Error?.Code);
+        Assert.Empty(result.Output.Lines);
+    }
+
+    [Fact]
     public async Task ChangelogOutputsSourceChangelogEntries()
     {
         var result = await DispatchChangelogAsync(["changelog"]);
@@ -825,6 +923,59 @@ public sealed class MetadataCommandTests
         var descriptor = CliCommandDescriptor.Create<InfoCommandOptions, InfoCommandHandler>(
             "info",
             InfoCommandOptions.Parse,
+            CommandGroup.Knowledge,
+            new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
+        var dispatcher = new CliCommandDispatcher(
+            new CliCommandParser(),
+            services.GetRequiredService<IServiceScopeFactory>(),
+            output);
+
+        var result = await dispatcher.DispatchAsync(
+            args,
+            CliCommandDescriptorCatalog.Create([descriptor]),
+            TestContext.Current.CancellationToken);
+
+        return new ListDispatchResult(result, output);
+    }
+
+    private static DocumentSnapshotRegistry CreateDocumentSnapshotRegistry(string markdown)
+    {
+        var source = new DocumentSourceIdentity("../ReferenceProjects/AtomUI", "release/6.0", "test", "2026-06-30T00:00:00Z");
+        var topic = new TopicDocument(
+            "design-language",
+            "AtomUI Design",
+            "zh",
+            [new DocumentSectionContent("design-language", "AtomUI Design", 0, markdown, ["markdown"])],
+            [],
+            [],
+            source,
+            "dedicated-docs",
+            "1.0",
+            "6.0");
+        var snapshot = new DocumentSnapshot(
+            "1.0",
+            "dedicated-docs",
+            "6.0",
+            "atomui",
+            "AtomUI",
+            "zh",
+            source,
+            [],
+            [topic]);
+        return new DocumentSnapshotRegistry([snapshot]);
+    }
+
+    private static async Task<ListDispatchResult> DispatchDesignAsync(string[] args)
+    {
+        var output = new RecordingOutputWriter();
+        var services = new ServiceCollection()
+            .AddSingleton(DocumentSnapshotRegistry.CreateDefault())
+            .AddSingleton<DesignDocumentQueryService>()
+            .AddTransient<DesignCommandHandler>()
+            .BuildServiceProvider();
+        var descriptor = CliCommandDescriptor.Create<DesignCommandOptions, DesignCommandHandler>(
+            "design.md",
+            DesignCommandOptions.Parse,
             CommandGroup.Knowledge,
             new HashSet<OutputFormat> { OutputFormat.Text, OutputFormat.Json, OutputFormat.Markdown });
         var dispatcher = new CliCommandDispatcher(

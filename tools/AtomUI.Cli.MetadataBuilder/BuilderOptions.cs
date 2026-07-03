@@ -21,6 +21,7 @@ internal sealed record BuilderOptions(
         {
             "catalog",
             "document",
+            "package",
             "semantic",
             "token"
         };

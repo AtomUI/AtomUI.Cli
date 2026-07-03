@@ -314,12 +314,104 @@ public sealed record DesignCommandOptions(GlobalCliOptions Global, string Sectio
     }
 }
 
-public sealed record PackageCommandOptions(GlobalCliOptions Global, string? PackageOrProduct, bool Strict, bool IncludeCompatibility) : IAtomUICliCommandOptions
+public sealed record PackageCommandOptions(
+    GlobalCliOptions Global,
+    string? Target,
+    PackageQueryKind Kind,
+    IReadOnlySet<PackageIncludeSection> Include,
+    IReadOnlyList<string> InvalidIncludes,
+    string? InvalidKind,
+    bool Tree,
+    bool CommercialOnly,
+    bool IncludeHidden,
+    bool Strict) : IAtomUICliCommandOptions
 {
     public static PackageCommandOptions Parse(GlobalCliOptions global, IReadOnlyList<string> args)
     {
         var reader = new CommandOptionsReader(args);
-        return new PackageCommandOptions(global, reader.Positionals.FirstOrDefault(), reader.HasFlag("strict"), reader.GetBool("include-compatibility", true));
+        var kindText = reader.GetOption("kind", "all")!;
+        var kindParsed = TryParseKind(kindText, out var kind);
+        var includes = ParseIncludes(reader.GetOption("include"), global.Detail, out var invalidIncludes);
+        return new PackageCommandOptions(
+            global,
+            reader.Positionals.FirstOrDefault(),
+            kind,
+            includes,
+            invalidIncludes,
+            kindParsed ? null : kindText,
+            reader.HasFlag("tree"),
+            reader.HasFlag("commercial"),
+            reader.HasFlag("include-hidden"),
+            reader.HasFlag("strict"));
+    }
+
+    private static bool TryParseKind(string value, out PackageQueryKind kind)
+    {
+        kind = value.ToLowerInvariant() switch
+        {
+            "all" => PackageQueryKind.All,
+            "package" => PackageQueryKind.Package,
+            "product" => PackageQueryKind.Product,
+            _ => PackageQueryKind.All
+        };
+
+        return kind != PackageQueryKind.All || value.Equals("all", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlySet<PackageIncludeSection> ParseIncludes(
+        string? value,
+        bool detail,
+        out IReadOnlyList<string> invalidIncludes)
+    {
+        var includes = new HashSet<PackageIncludeSection>();
+        var invalid = new List<string>();
+        if (detail)
+        {
+            includes.Add(PackageIncludeSection.All);
+        }
+
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            foreach (var item in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (TryParseInclude(item, out var include))
+                {
+                    includes.Add(include);
+                }
+                else
+                {
+                    invalid.Add(item);
+                }
+            }
+        }
+
+        if (includes.Count == 0)
+        {
+            includes.Add(PackageIncludeSection.Summary);
+        }
+
+        invalidIncludes = invalid;
+        return includes;
+    }
+
+    private static bool TryParseInclude(string value, out PackageIncludeSection include)
+    {
+        include = value.ToLowerInvariant() switch
+        {
+            "summary" => PackageIncludeSection.Summary,
+            "dependencies" => PackageIncludeSection.Dependencies,
+            "controls" => PackageIncludeSection.Controls,
+            "registration" => PackageIncludeSection.Registration,
+            "compatibility" => PackageIncludeSection.Compatibility,
+            "conflicts" => PackageIncludeSection.Conflicts,
+            "replacements" => PackageIncludeSection.Replacements,
+            "source" => PackageIncludeSection.Source,
+            "diagnostics" => PackageIncludeSection.Diagnostics,
+            "all" => PackageIncludeSection.All,
+            _ => PackageIncludeSection.Summary
+        };
+
+        return include != PackageIncludeSection.Summary || value.Equals("summary", StringComparison.OrdinalIgnoreCase);
     }
 }
 

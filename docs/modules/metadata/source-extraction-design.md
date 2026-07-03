@@ -121,7 +121,8 @@ MetadataBuilder
 | 输入 | 用途 |
 | --- | --- |
 | `src/AtomUI.Desktop.Controls*.csproj` | 控件生态包候选。 |
-| `build/Version.props` | 读取 `AtomUIVersion`，作为 package version。 |
+| `build/Version.props`、`build/Common.props`、`Directory.Packages.props` | 读取 `AtomUIVersion`、target frameworks、Avalonia 版本和外部包版本。 |
+| `ProjectReference`、`PackageReference` | 生成 package dependency 图谱。 |
 | `control:*` facts | 反推 package 控件归属。 |
 | `docs/modules/**/overview.md` | 读取 package/product 说明文本。 |
 
@@ -129,6 +130,8 @@ MetadataBuilder
 
 - 没有控件归属的项目不进入命令 catalog，避免把内部工具包误暴露为控件包。
 - optional/commercial visibility 由 package/product 归属统一标注。
+- `PackageCatalogProcessor` 同时生成 `package:*` catalog fact 和 `package-document:*` package snapshot fact。
+- `$(...)` 形式的 MSBuild 属性必须在构建期解析；运行时输出不得暴露未解析的版本变量。
 - 运行时 `MetadataCatalog.CreateFallback` 不允许保存真实 package/product 列表。
 - 产品推断只是初始值。最终产品清单必须允许通过显式 `metadata.config.json` 覆盖 display name、visibility、冲突关系和注册方法。
 
@@ -191,7 +194,7 @@ Gallery 示例是 Demo、usage、examples 和常见场景的主输入之一。
 - Markdown adapter 不发明 API、事件或 ControlTheme 结构，只抽取人工维护的定位、解释、边界和源码索引。
 - 文档中记录的源码路径必须校验存在；不存在时输出 diagnostic。
 - 文档和源码/Gallery 冲突时，进入 SnapshotAssembler 的冲突处理，不静默选择一方。
-- `topic/design-language` 由 `docs/overview.md`、`docs/controls/overview.md`、控件研发规范、控件文档规范、Token 规范和 Gallery 示例规范生成，供 `design.md` 和 `doc --topic design-language` 共同消费。
+- `topic/design-language` 优先由 `DESIGN.md`、`docs/design.md` 或 `docs/design-language.md` 生成。源码未提供专用设计语言文档时，由 `docs/overview.md`、`docs/controls/overview.md`、控件研发规范、控件文档规范、Token 规范和 Gallery 示例规范合成，供 `design.md` 和 `doc --topic design-language` 共同消费。
 
 ## ChangelogProcessor
 

@@ -1475,31 +1475,67 @@ public sealed class SemanticCommandHandler(
     }
 }
 
-public sealed class DesignCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<DesignCommandOptions>
+public sealed class DesignCommandHandler(DesignDocumentQueryService designs) : IAtomUICliCommandHandler<DesignCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(DesignCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
-        var document = metadata.FindDocument("topic", "design-language");
-        return ValueTask.FromResult(AtomUICliResult.Success(document?.Markdown ?? metadata.RenderSummary()));
+        var result = designs.Query(options);
+        if (!result.IsFound)
+        {
+            var isArgumentError = result.ErrorCode == AtomUICliErrorCodes.ArgumentInvalidValue;
+            return ValueTask.FromResult(isArgumentError
+                ? MetadataErrors.InvalidValue(result.ErrorMessage ?? "Invalid design.md option.")
+                : MetadataErrors.NotFound(result.ErrorCode ?? AtomUICliErrorCodes.DataUnavailable, result.ErrorMessage ?? "AtomUI design.md was not found."));
+        }
+
+        var payload = result.Payload ?? throw new InvalidOperationException("Design document payload is required.");
+        object resultPayload = options.Global.Format == OutputFormat.Json
+            ? payload
+            : payload.Doc;
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
     }
 }
 
-public sealed class PackageCommandHandler(MetadataQueryService metadata) : IAtomUICliCommandHandler<PackageCommandOptions>
+public sealed class PackageCommandHandler(PackageQueryService packages, PackageOutputRenderer renderer) : IAtomUICliCommandHandler<PackageCommandOptions>
 {
     public ValueTask<AtomUICliResult> ExecuteAsync(PackageCommandOptions options, CliInvocationContext context, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(options.PackageOrProduct))
+        if (!string.IsNullOrWhiteSpace(options.InvalidKind))
         {
-            return ValueTask.FromResult(AtomUICliResult.Success(string.Join(Environment.NewLine, metadata.ListPackages(options.Global.Product).Select(package => $"{package.Id} {package.Version}"))));
+            return ValueTask.FromResult(MetadataErrors.InvalidValue($"Unknown package query kind '{options.InvalidKind}'."));
         }
 
-        var package = metadata.FindPackageOrProduct(options.PackageOrProduct);
-        if (package is null)
+        if (options.InvalidIncludes.Count > 0)
         {
-            return ValueTask.FromResult(MetadataErrors.NotFound(AtomUICliErrorCodes.PackageNotFound, $"Package or product '{options.PackageOrProduct}' was not found."));
+            return ValueTask.FromResult(MetadataErrors.InvalidValue($"Unknown package include section '{options.InvalidIncludes[0]}'."));
         }
 
-        return ValueTask.FromResult(AtomUICliResult.Success($"{package.Id} {package.Version}: {package.Description}{Environment.NewLine}Controls: {string.Join(", ", package.Controls)}"));
+        var result = packages.Query(new PackageQuery(
+            options.Target,
+            options.Kind,
+            options.Global.Product,
+            options.Global.TargetVersion,
+            options.Global.Language,
+            options.Include,
+            options.Tree,
+            options.CommercialOnly,
+            options.IncludeHidden,
+            options.Strict));
+        if (!result.IsSuccess)
+        {
+            return ValueTask.FromResult(result.Kind == PackageQueryResultKind.Invalid
+                ? MetadataErrors.InvalidValue(result.ErrorMessage ?? "Invalid package command option.")
+                : MetadataErrors.NotFound(result.ErrorCode ?? AtomUICliErrorCodes.PackageNotFound, result.ErrorMessage ?? "Package or product was not found."));
+        }
+
+        var payload = result.Payload ?? throw new InvalidOperationException("Package command payload is required.");
+        object resultPayload = options.Global.Format switch
+        {
+            OutputFormat.Json => payload,
+            OutputFormat.Markdown => renderer.RenderMarkdown(payload),
+            _ => renderer.RenderText(payload)
+        };
+        return ValueTask.FromResult(AtomUICliResult.Success(resultPayload));
     }
 }
 
