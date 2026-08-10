@@ -8,7 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../AtomUI.Cli.Abstractions/AtomUI.Cli.Abstractions.csproj" />
-    <PackageReference Include="AtomUI.Base" />
-    <PackageReference Include="AtomUI.Base.Generator" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="AtomUI.Foundation" />
+    <PackageReference Include="AtomUI.Foundation.Generator" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

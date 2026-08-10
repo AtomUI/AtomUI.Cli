@@ -5,8 +5,8 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="AtomUI.Base" Version="$(AtomUIBaseVersion)" />
-    <PackageVersion Include="AtomUI.Base.Generator" Version="$(AtomUIBaseVersion)" />
+    <PackageVersion Include="AtomUI.Foundation" Version="$(AtomUIFoundationVersion)" />
+    <PackageVersion Include="AtomUI.Foundation.Generator" Version="$(AtomUIFoundationVersion)" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />

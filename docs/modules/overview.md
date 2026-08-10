@@ -19,7 +19,7 @@
 - 模块依赖必须使用 `typeof(TModule)`，不得手写模块 ID 字符串。
 - 服务注册走 `ModuleServiceConfigurationContext.Services`。
 - 多贡献能力不得注册到 `ModuleServiceCollection`，必须走 CLI 专属 contribution context。
-- 所有模块 catalog 必须由 `AtomUI.Base.Generator` 或显式强类型 registration 产生。
+- 所有模块 catalog 必须由 `AtomUI.Foundation.Generator` 或显式强类型 registration 产生。
 - Native AOT 包不得动态加载外部模块程序集。
 - 模块失败必须转换为 [错误码标准](../commands/error-code-standard.md) 中登记的 `ATOMUICLI_MOD001` 或 `ATOMUICLI_MOD002`。
 

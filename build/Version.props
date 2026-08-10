@@ -3,7 +3,7 @@
     <AtomUICliVersionPropsImported>true</AtomUICliVersionPropsImported>
     <AtomUICliVersion Condition="'$(AtomUICliVersion)' == ''">1.0.0-alpha.1</AtomUICliVersion>
     <AtomUICliAssemblyVersion Condition="'$(AtomUICliAssemblyVersion)' == ''">1.0.0.0</AtomUICliAssemblyVersion>
-    <AtomUIBaseVersion Condition="'$(AtomUIBaseVersion)' == ''">1.0.0-alpha.1</AtomUIBaseVersion>
+    <AtomUIFoundationVersion Condition="'$(AtomUIFoundationVersion)' == ''">1.0.0</AtomUIFoundationVersion>
 
     <Version Condition="'$(Version)' == ''">$(AtomUICliVersion)</Version>
     <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">$(AtomUICliAssemblyVersion)</AssemblyVersion>
