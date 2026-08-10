@@ -1,4 +1,5 @@
 using AtomUI.Cli;
+using AtomUI.Cli.Hosting.Presentation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AtomUI.Cli.Hosting.Commands;
@@ -55,7 +56,7 @@ public sealed class CliCommandDispatcher(
         if (result.IsSuccess && outputWriter is not null)
         {
             var text = format == OutputFormat.Json
-                ? (jsonOutputSerializer ?? new AtomUI.Cli.Hosting.Output.JsonOutputSerializer()).SerializeResult(commandName, result)
+                ? (jsonOutputSerializer ?? new JsonOutputSerializer()).SerializeResult(commandName, result)
                 : RenderTextPayload(result.Payload);
 
             if (text is null)

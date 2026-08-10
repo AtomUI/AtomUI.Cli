@@ -16,21 +16,22 @@ Token metadata 的首个落地形态是编译期 C# 生成文件：`AtomUI.Cli.H
 
 AtomUI 源码根目录由构建期工具解析，运行时 CLI 不读取源码目录。源码根目录解析优先级必须和命令设计标准保持一致：
 
-1. `--source-root <path>` 命令行参数或 `AtomUITokenSourceRoot` MSBuild 属性。
-2. `AtomUIDocSourceRoot` MSBuild 属性。
-3. `ATOMUI_SOURCE_ROOT` 环境变量。
-4. 默认约定路径：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+1. `--source-root <path>` 命令行参数或 `AtomUISourceRoot` MSBuild 属性。
+2. `ATOMUI_SOURCE_ROOT` 环境变量。
+3. 默认约定路径：`<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
 默认路径必须基于 AtomUI Cli 仓库根目录计算，不能基于当前 shell 工作目录计算。本地开发和 CI/CD 应使用相同工作区布局：
 
 ```text
 <workspace>/
   AtomUICli/
-  ReferenceProjects/
+  .workspace/
     AtomUI/
 ```
 
-构建期工具不负责 clone、pull 或 checkout AtomUI 源码。源码仓库准备由外层 build system 完成，构建期工具只读取已存在目录并校验 source ref、source commit 和 target version。Release 构建必须使用锁定 commit；锁文件不匹配时生成失败。
+构建期工具默认不负责 clone、pull 或 checkout AtomUI 源码。源码仓库准备由外层 build system 完成，构建期工具只读取已存在目录并校验 source ref、source commit 和 target version。Release 构建必须使用锁定 commit；锁文件不匹配时生成失败。
+
+允许通过 `AtomUIAutoProvisionSource=true` 显式打开自动源码供应。自动供应只在默认源码目录不存在时 clone AtomUI 仓库到 `.workspace/AtomUI`；如果同时设置 `AtomUISourceCommit`，可在新克隆的工作区上 checkout 到锁定 commit。自动供应不得对已有源码目录执行 `git pull` 或覆盖。CI/CD 使用该能力时必须设置 `AtomUISourceCommit`，否则只能视为非 release 构建。
 
 | 输入源 | 主要路径模式 | 产出字段 |
 | --- | --- | --- |
@@ -58,7 +59,7 @@ AtomUI 源码根目录由构建期工具解析，运行时 CLI 不读取源码�
 
 ```json
 {
-  "sourceRootConvention": "../ReferenceProjects/AtomUI",
+  "sourceRootConvention": ".workspace/AtomUI",
   "sourceRef": "release/6.0",
   "sourceCommit": "<commit>",
   "targetVersion": "6.0",
@@ -72,7 +73,7 @@ AtomUI 源码根目录由构建期工具解析，运行时 CLI 不读取源码�
 - Release 构建必须校验 `sourceCommit` 与锁文件一致。
 - `sourceRef` 可记录 branch、tag 或 release line，但不能替代 commit 校验。
 - 生成结果不得写入本机绝对源码路径，只能写入逻辑路径和源码身份字段。
-- 未传入源码根且默认路径不存在时，构建期工具必须返回明确错误，提示配置 `--source-root`、`AtomUIDocSourceRoot` 或 `ATOMUI_SOURCE_ROOT`。
+- 未传入源码根且默认路径不存在时，构建期工具必须返回明确错误，提示配置 `--source-root` 或 `ATOMUI_SOURCE_ROOT`。
 
 ## Processor 分层
 

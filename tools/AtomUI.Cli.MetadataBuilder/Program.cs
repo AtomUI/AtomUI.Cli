@@ -16,11 +16,11 @@ internal static class Program
             var sourceRoot = Path.GetFullPath(options.SourceRoot);
             if (!Directory.Exists(sourceRoot))
             {
-                throw new DirectoryNotFoundException($"AtomUI source root '{options.SourceRoot}' does not exist. Configure --source-root, AtomUIDocSourceRoot, or ATOMUI_SOURCE_ROOT.");
+                throw new DirectoryNotFoundException($"AtomUI source root '{options.SourceRoot}' does not exist. Configure --source-root or ATOMUI_SOURCE_ROOT. Default convention is <AtomUICliRepoRoot>/.workspace/AtomUI.");
             }
 
             var context = new SourceAnalysisContext(
-                new SourceIdentity("default-reference-project", options.SourceRef, ResolveSourceCommit(sourceRoot), options.TargetVersion, "1.0"),
+                new SourceIdentity(".workspace/AtomUI", options.SourceRef, ResolveSourceCommit(sourceRoot), options.TargetVersion, "1.0"),
                 new SourcePathIndex(sourceRoot));
             var registry = new SourceAnalysisProcessorRegistry();
             registry.Add(new GalleryCatalogProcessor());

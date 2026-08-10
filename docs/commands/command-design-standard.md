@@ -138,21 +138,34 @@ stderr/stdout 边界、text 错误摘要和 `--format json` error envelope 由 [
 
 构建期工具解析 AtomUI 源码根目录时必须使用以下优先级：
 
-1. `--source-root <path>` 命令行参数。
-2. `AtomUIDocSourceRoot` MSBuild 属性。
-3. `ATOMUI_SOURCE_ROOT` 环境变量。
-4. 默认约定路径：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+1. `AtomUISourceRoot` MSBuild 属性或 `--source-root <path>` 命令行参数。
+2. `ATOMUI_SOURCE_ROOT` 环境变量。
+3. 默认约定路径：`<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
 默认约定路径必须基于 AtomUI Cli 仓库根目录计算，不能基于当前 shell 工作目录计算。本地开发和 CI/CD 均应使用相同目录布局：
 
 ```text
 <workspace>/
   AtomUICli/
-  ReferenceProjects/
+  .workspace/
     AtomUI/
 ```
 
-构建期工具不得自动执行 `git clone`、`git pull` 或 checkout。源码仓库准备、分支切换和 commit 锁定由外层 build system 或 CI/CD pipeline 负责。构建期工具只负责读取已存在的源码目录、校验源码身份并生成快照。
+构建期工具默认不得自动执行 `git clone`、`git pull` 或 checkout。源码仓库准备、分支切换和 commit 锁定由外层 build system 或 CI/CD pipeline 负责。构建期工具只负责读取已存在的源码目录、校验源码身份并生成快照。
+
+如果需要在构建期自动供应源码，必须显式启用：
+
+```bash
+dotnet build -p:AtomUIAutoProvisionSource=true
+```
+
+自动供应规则：
+
+- 默认值必须是 `AtomUIAutoProvisionSource=false`。
+- 仅当 `AtomUISourceRoot` 不存在时允许 clone 到 `.workspace/AtomUI`；如果同时设置 `AtomUISourceCommit`，可在新克隆的工作区上 checkout 到锁定 commit。
+- 已存在源码目录时不得自动 `git pull`、checkout 或覆盖用户工作区。
+- CI/CD 必须同时设置 `AtomUISourceCommit`，用 commit 锁定保证 release 构建可复现。
+- `AtomUISourceRepository`、`AtomUISourceRef`、`AtomUISourceCommit` 必须写入构建日志或快照诊断，便于追踪源码身份。
 
 生成的快照必须记录源码身份：
 

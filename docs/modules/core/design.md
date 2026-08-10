@@ -169,6 +169,14 @@ CommandPreParser.ParseCommandName
 - text 输出面向人类，字段可以少于 JSON，但顺序必须稳定。
 - markdown 只允许命令 descriptor 声明支持。
 
+源码组织约束：
+
+- Core 输出呈现层源码目录统一命名为 `Presentation`。
+- `Output` 只作为领域概念和类型名使用，例如 `IOutputWriter`、`OutputFormat`、`JsonOutputSerializer`；不得作为 `src/**/Output` 源码目录名。
+- 仓库根目录的 `output/`、`outputs/` 保留给 build/test/publish 产物，并由 `.gitignore` 忽略。
+- 因 macOS 和部分 CI 环境可能运行在大小写不敏感文件系统，源码目录不得使用与 ignore 产物目录仅大小写不同的名称。
+- Hosting 层实现命名空间使用 `AtomUI.Cli.Hosting.Presentation`；Abstractions 层接口仍保持 `AtomUI.Cli` 根命名空间，避免把物理目录名暴露成公共 API。
+
 ## 8.1 Help 输出设计
 
 Core 模块负责 help 首页和 help 详情页。help 首页不能输出裸命令名列表，必须按照用户任务组织内容：

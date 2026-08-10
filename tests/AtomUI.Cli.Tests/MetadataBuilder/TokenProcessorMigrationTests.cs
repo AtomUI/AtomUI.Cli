@@ -12,7 +12,7 @@ public sealed class TokenProcessorMigrationTests
     {
         var sourceRoot = ResolveAtomUISourceRoot();
         var context = new SourceAnalysisContext(
-            new SourceIdentity("default-reference-project", "release/6.0", "unknown", "6.0", "1.0"),
+            new SourceIdentity(".workspace/AtomUI", "release/6.0", "unknown", "6.0", "1.0"),
             new SourcePathIndex(sourceRoot));
         var processor = new TokenProcessor();
 
@@ -28,7 +28,7 @@ public sealed class TokenProcessorMigrationTests
         var current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current is not null)
         {
-            var candidate = Path.GetFullPath(Path.Combine(current.FullName, "..", "ReferenceProjects", "AtomUI"));
+            var candidate = Path.GetFullPath(Path.Combine(current.FullName, ".workspace", "AtomUI"));
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -37,6 +37,6 @@ public sealed class TokenProcessorMigrationTests
             current = current.Parent;
         }
 
-        throw new DirectoryNotFoundException("Cannot locate ../ReferenceProjects/AtomUI from test output.");
+        throw new DirectoryNotFoundException("Cannot locate .workspace/AtomUI from test output.");
     }
 }

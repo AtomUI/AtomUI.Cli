@@ -53,7 +53,7 @@ dotnet atomui package AtomUI.Desktop.Controls --format markdown
 - 模块文档中的产品、注册和兼容性说明。
 - 商业 overlay 数据。
 
-默认源码位置遵守命令设计标准：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+默认源码位置遵守命令设计标准：`<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
 ## 输出
 

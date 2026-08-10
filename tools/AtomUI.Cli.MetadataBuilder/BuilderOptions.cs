@@ -93,7 +93,7 @@ internal sealed record BuilderOptions(
             return environmentRoot;
         }
 
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../ReferenceProjects/AtomUI"));
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../.workspace/AtomUI"));
     }
 
     private static string ReadValue(IReadOnlyList<string> args, ref int index, string optionName)

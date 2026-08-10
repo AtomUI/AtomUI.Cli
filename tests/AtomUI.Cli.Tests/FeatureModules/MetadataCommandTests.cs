@@ -361,7 +361,7 @@ public sealed class MetadataCommandTests
         var output = Assert.Single(result.Output.Lines);
         Assert.Contains("Source: controlgallery/AtomUIGallery/ShowCases/General/Button/Views/ButtonShowCase.axaml", output, StringComparison.Ordinal);
         Assert.Contains("Snapshot: atomui-docs-source-", output, StringComparison.Ordinal);
-        Assert.Contains("Source ref: ../ReferenceProjects/AtomUI @ release/6.0", output, StringComparison.Ordinal);
+        Assert.Contains("Source ref: .workspace/AtomUI @ release/6.0", output, StringComparison.Ordinal);
         Assert.DoesNotContain("Source commit: builtin-doc-snapshot", output, StringComparison.Ordinal);
     }
 
@@ -940,7 +940,7 @@ public sealed class MetadataCommandTests
 
     private static DocumentSnapshotRegistry CreateDocumentSnapshotRegistry(string markdown)
     {
-        var source = new DocumentSourceIdentity("../ReferenceProjects/AtomUI", "release/6.0", "test", "2026-06-30T00:00:00Z");
+        var source = new DocumentSourceIdentity(".workspace/AtomUI", "release/6.0", "test", "2026-06-30T00:00:00Z");
         var topic = new TopicDocument(
             "design-language",
             "AtomUI Design",

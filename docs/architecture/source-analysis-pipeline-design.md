@@ -49,7 +49,7 @@ AtomUI Cli 的多个命令都需要准确的 AtomUI 源码事实：
 
 ```mermaid
 flowchart TB
-    Source["AtomUI source root<br/>../ReferenceProjects/AtomUI"] --> Reader["SourceWorkspaceReader"]
+    Source["AtomUI source root<br/>.workspace/AtomUI"] --> Reader["SourceWorkspaceReader"]
     Reader --> Pipeline["SourceAnalysisPipeline"]
 
     Pipeline --> P1["PackageCatalogProcessor"]
@@ -100,17 +100,88 @@ Pipeline 的关键边界：
 源码根解析优先级统一为：
 
 1. MSBuild 属性或命令行参数 `AtomUISourceRoot` / `--source-root`。
-2. 兼容属性 `AtomUITokenSourceRoot`、`AtomUIDocSourceRoot`。
-3. 环境变量 `ATOMUI_SOURCE_ROOT`。
-4. 默认路径 `<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+2. 环境变量 `ATOMUI_SOURCE_ROOT`。
+3. 默认路径 `<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
-Pipeline 不负责 clone、pull 或 checkout AtomUI 源码。源码仓库准备由外层 build system 完成。
+Pipeline 本身不负责 clone、pull 或 checkout AtomUI 源码。源码供应属于 Pipeline 之前的构建期步骤：默认要求 `.workspace/AtomUI` 已存在；只有显式设置 `AtomUIAutoProvisionSource=true` 时，构建系统才允许在源码目录不存在的情况下 clone AtomUI 仓库。
+
+### 6.1 构建期源码供应
+
+源码供应由 `EnsureAtomUISource` 构建目标负责，必须在 `GenerateBuiltInSourceAnalysisSnapshots` 之前执行。
+
+构建目标顺序：
+
+```text
+EnsureAtomUISource
+  -> ValidateAtomUISourceIdentity
+  -> GenerateBuiltInSourceAnalysisSnapshots
+```
+
+`EnsureAtomUISource` 只负责让源码目录存在；`ValidateAtomUISourceIdentity` 负责确认实际源码身份；`GenerateBuiltInSourceAnalysisSnapshots` 只消费已校验源码，不承担网络、clone 或 checkout 职责。
+
+构建属性：
+
+| 属性 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AtomUIAutoProvisionSource` | `false` | 是否允许构建期自动 clone AtomUI 源码。默认禁止联网。 |
+| `AtomUISourceRepository` | `https://github.com/AtomUI/AtomUI.git` | 自动 clone 使用的 Git 仓库地址。私有镜像或企业 GitHub 可覆盖。 |
+| `AtomUISourceRef` | `release/6.0` | 自动 clone 使用的 branch、tag 或 ref。不能替代 commit 锁定。 |
+| `AtomUISourceCommit` | 空 | 可选的源码 commit 锁。可以是完整 SHA 或 Git 可解析的 commit 引用。Release 构建必须设置。 |
+| `AtomUISourceRoot` | `<AtomUICliRepoRoot>/.workspace/AtomUI` | AtomUI 源码目录。显式配置时优先级最高。 |
+
+建议 MSBuild 默认值：
+
+```xml
+<AtomUIAutoProvisionSource>false</AtomUIAutoProvisionSource>
+<AtomUISourceRepository>https://github.com/AtomUI/AtomUI.git</AtomUISourceRepository>
+<AtomUISourceRef>release/6.0</AtomUISourceRef>
+<AtomUISourceCommit></AtomUISourceCommit>
+<AtomUISourceRoot>$(AtomUICliRepoRoot).workspace/AtomUI</AtomUISourceRoot>
+```
+
+执行规则：
+
+1. 如果 `AtomUISourceRoot` 已存在，直接进入源码身份校验，不执行网络操作。
+2. 如果 `AtomUISourceRoot` 不存在且 `AtomUIAutoProvisionSource` 不是 `true`，构建失败，提示用户 clone 到 `.workspace/AtomUI` 或显式配置源码根。
+3. 如果 `AtomUISourceRoot` 不存在且 `AtomUIAutoProvisionSource=true`，构建系统执行 `git clone --branch $(AtomUISourceRef) $(AtomUISourceRepository) $(AtomUISourceRoot)`。
+4. 如果设置了 `AtomUISourceCommit`，clone 后必须 checkout 到该 commit，并校验解析后的 `git rev-parse HEAD` 与锁定 commit 一致。
+5. 自动供应不得对已有源码目录执行隐式 `git pull`，避免本地和 CI 构建结果漂移。
+
+失败策略：
+
+| 场景 | 行为 |
+| --- | --- |
+| `git` 不存在 | 如果需要自动供应，构建失败，提示安装 Git 或手动准备 `.workspace/AtomUI`。 |
+| 网络不可用 | 构建失败，不降级为手写快照或旧数据。 |
+| 仓库 clone 失败 | 构建失败并输出 repository、ref 和 target path。 |
+| `AtomUISourceCommit` 校验失败 | 构建失败，输出期望 commit、解析后的期望 commit 与实际 commit。 |
+| `.workspace/AtomUI` 已存在但 ref 不匹配 | 不自动切换；构建失败或 warning 由 `AtomUISourceCommit` 是否设置决定。Release 构建必须失败。 |
+| `.workspace/AtomUI` 不是 Git 仓库 | 允许非 release 本地构建继续生成快照，但 `sourceCommit` 记录为 `unknown`；Release 构建必须失败。 |
+
+CI/CD 推荐写法：
+
+```bash
+dotnet build \
+  -p:AtomUIAutoProvisionSource=true \
+  -p:AtomUISourceRepository=https://github.com/AtomUI/AtomUI.git \
+  -p:AtomUISourceRef=release/6.0 \
+  -p:AtomUISourceCommit=<locked-sha>
+```
+
+Release 构建必须设置 `AtomUISourceCommit`。未锁定 commit 的自动供应只能用于本地开发、预览构建或临时验证，不得作为正式发布依据。
+
+日志与快照要求：
+
+- 构建日志必须输出最终 `AtomUISourceRoot`、`AtomUISourceRepository`、`AtomUISourceRef` 和实际 `sourceCommit`。
+- 生成快照必须继续使用逻辑路径 `.workspace/AtomUI`，不得写入本机绝对路径。
+- 如果通过显式 `AtomUISourceRoot` 指向其他目录，快照仍记录逻辑 `sourceRootConvention`，具体绝对路径只能出现在构建日志中。
+- MetadataBuilder 接收的 `--source-root` 必须是校验后的最终路径。
 
 每次 Pipeline 产出必须记录：
 
 | 字段 | 说明 |
 | --- | --- |
-| `sourceRootConvention` | 默认约定路径，例如 `../ReferenceProjects/AtomUI`。 |
+| `sourceRootConvention` | 默认约定路径，例如 `.workspace/AtomUI`。 |
 | `sourceRef` | release line、branch 或 tag，例如 `release/6.0`。 |
 | `sourceCommit` | AtomUI 源码仓库 HEAD 短 commit。 |
 | `targetVersion` | AtomUI 目标版本。 |
@@ -760,7 +831,7 @@ target 职责：
 
 ```bash
 dotnet run --project tools/AtomUI.Cli.MetadataBuilder \
-  --source-root ../ReferenceProjects/AtomUI \
+  --source-root .workspace/AtomUI \
   --target-version 6.0 \
   --source-ref release/6.0 \
   --output-root output/obj/AtomUI.Cli.Hosting/Generated/Metadata
@@ -847,7 +918,7 @@ Pipeline 诊断码建议统一使用 `ATOMUICLI_SRC_*` 前缀：
 
 ### 21.4 端到端构建测试
 
-- 默认源码根 `../ReferenceProjects/AtomUI` 可生成所有内置 snapshot。
+- 默认源码根 `.workspace/AtomUI` 可生成所有内置 snapshot。
 - 缺失源码根时构建失败，并提示配置 `AtomUISourceRoot` 或 `ATOMUI_SOURCE_ROOT`。
 - release commit lock 不匹配时构建失败。
 - 生成文件不包含本机绝对路径。

@@ -53,13 +53,13 @@ public sealed class SourceAnalysisPipelineTests
     public void BuilderOptionsParseUnifiedSourceArguments()
     {
         var options = BuilderOptions.Parse([
-            "--source-root", "../ReferenceProjects/AtomUI",
+            "--source-root", ".workspace/AtomUI",
             "--target-version", "6.0",
             "--source-ref", "release/6.0",
             "--output-root", "output/obj/generated"
         ]);
 
-        Assert.Equal("../ReferenceProjects/AtomUI", options.SourceRoot);
+        Assert.Equal(".workspace/AtomUI", options.SourceRoot);
         Assert.Equal("6.0", options.TargetVersion);
         Assert.Equal("release/6.0", options.SourceRef);
         Assert.Equal("output/obj/generated", options.OutputRoot);

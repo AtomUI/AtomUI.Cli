@@ -57,7 +57,7 @@ dotnet atomui token Button Padding --format json
 
 ## 数据来源
 
-`token` 命令的数据必须来自构建期对 AtomUI 项目源码的抽取结果。默认源码根是 `<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`，CI 应保持同样工作区布局，或通过 `AtomUITokenSourceRoot`、`AtomUIDocSourceRoot`、`ATOMUI_SOURCE_ROOT` 显式覆盖。
+`token` 命令的数据必须来自构建期对 AtomUI 项目源码的抽取结果。默认源码根是 `<AtomUICliRepoRoot>/.workspace/AtomUI`，CI 应保持同样工作区布局，或通过 `AtomUISourceRoot`、`ATOMUI_SOURCE_ROOT` 显式覆盖。
 
 构建期由 `tools/AtomUI.Cli.MetadataBuilder` 读取源码，生成 `output/obj/AtomUI.Cli.Hosting/Generated/Metadata/BuiltInTokenSnapshot.g.cs`，并编译进 `AtomUI.Cli.Hosting`。发布后的 CLI 不读取源码目录、不读取 Git、不解析 XAML、不反射 AtomUI 控件程序集。
 

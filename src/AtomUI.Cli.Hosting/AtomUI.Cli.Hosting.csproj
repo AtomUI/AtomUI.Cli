@@ -4,11 +4,12 @@
     <RootNamespace>AtomUI.Cli.Hosting</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
     <AtomUICliRepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '..', '..'))</AtomUICliRepoRoot>
-    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(AtomUIDocSourceRoot)' != ''">$(AtomUIDocSourceRoot)</AtomUISourceRoot>
-    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(AtomUITokenSourceRoot)' != ''">$(AtomUITokenSourceRoot)</AtomUISourceRoot>
-    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(ATOMUI_SOURCE_ROOT)' != ''">$(ATOMUI_SOURCE_ROOT)</AtomUISourceRoot>
-    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(AtomUICliRepoRoot)', '..', 'ReferenceProjects', 'AtomUI'))</AtomUISourceRoot>
+    <AtomUIAutoProvisionSource Condition="'$(AtomUIAutoProvisionSource)' == ''">false</AtomUIAutoProvisionSource>
+    <AtomUISourceRepository Condition="'$(AtomUISourceRepository)' == ''">https://github.com/AtomUI/AtomUI.git</AtomUISourceRepository>
     <AtomUISourceRef Condition="'$(AtomUISourceRef)' == ''">release/6.0</AtomUISourceRef>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == '' and '$(ATOMUI_SOURCE_ROOT)' != ''">$(ATOMUI_SOURCE_ROOT)</AtomUISourceRoot>
+    <AtomUISourceRoot Condition="'$(AtomUISourceRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(AtomUICliRepoRoot)', '.workspace', 'AtomUI'))</AtomUISourceRoot>
+    <AtomUISourceCommit Condition="'$(AtomUISourceCommit)' == ''"></AtomUISourceCommit>
     <AtomUITargetVersion Condition="'$(AtomUITargetVersion)' == ''">6.0</AtomUITargetVersion>
     <AtomUISourceAnalysisGeneratedRoot>$(BaseIntermediateOutputPath)Generated/Metadata</AtomUISourceAnalysisGeneratedRoot>
   </PropertyGroup>
@@ -18,7 +19,58 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
-  <Target Name="GenerateBuiltInSourceAnalysisSnapshots" BeforeTargets="CoreCompile">
+  <Target Name="EnsureAtomUISource" BeforeTargets="GenerateBuiltInSourceAnalysisSnapshots">
+    <PropertyGroup>
+      <_AtomUISourceExists Condition="Exists('$(AtomUISourceRoot)')">true</_AtomUISourceExists>
+      <_AtomUISourceExists Condition="'$(_AtomUISourceExists)' == ''">false</_AtomUISourceExists>
+      <_AtomUISourceParentDirectory>$([System.IO.Path]::GetDirectoryName('$(AtomUISourceRoot)'))</_AtomUISourceParentDirectory>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_AtomUISourceParentDirectory)" Condition="'$(_AtomUISourceExists)' != 'true' and '$(AtomUIAutoProvisionSource)' == 'true'" />
+
+    <Error Condition="'$(_AtomUISourceExists)' != 'true' and '$(AtomUIAutoProvisionSource)' != 'true'"
+           Text="AtomUI source root '$(AtomUISourceRoot)' does not exist. Prepare .workspace/AtomUI or set AtomUIAutoProvisionSource=true." />
+
+    <Exec Command="git clone --branch &quot;$(AtomUISourceRef)&quot; &quot;$(AtomUISourceRepository)&quot; &quot;$(AtomUISourceRoot)&quot;"
+          Condition="'$(_AtomUISourceExists)' != 'true' and '$(AtomUIAutoProvisionSource)' == 'true'" />
+
+    <Exec Command="git -C &quot;$(AtomUISourceRoot)&quot; checkout --quiet &quot;$(AtomUISourceCommit)&quot;"
+          Condition="'$(_AtomUISourceExists)' != 'true' and '$(AtomUIAutoProvisionSource)' == 'true' and '$(AtomUISourceCommit)' != ''" />
+  </Target>
+
+  <Target Name="ValidateAtomUISourceIdentity" BeforeTargets="GenerateBuiltInSourceAnalysisSnapshots" DependsOnTargets="EnsureAtomUISource">
+    <PropertyGroup>
+      <_AtomUISourceExpectedCommit></_AtomUISourceExpectedCommit>
+      <_AtomUISourceResolvedCommit></_AtomUISourceResolvedCommit>
+    </PropertyGroup>
+
+    <Exec Command="git -C &quot;$(AtomUISourceRoot)&quot; rev-parse --verify &quot;$(AtomUISourceCommit)^{commit}&quot;"
+          Condition="'$(AtomUISourceCommit)' != ''"
+          ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" ItemName="_AtomUISourceExpectedCommitOutput" />
+    </Exec>
+
+    <PropertyGroup Condition="'$(AtomUISourceCommit)' != ''">
+      <_AtomUISourceExpectedCommit>@(_AtomUISourceExpectedCommitOutput, '')</_AtomUISourceExpectedCommit>
+    </PropertyGroup>
+
+    <Exec Command="git -C &quot;$(AtomUISourceRoot)&quot; rev-parse HEAD"
+          Condition="'$(AtomUISourceCommit)' != ''"
+          ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" ItemName="_AtomUISourceActualCommitOutput" />
+    </Exec>
+
+    <PropertyGroup Condition="'$(AtomUISourceCommit)' != ''">
+      <_AtomUISourceResolvedCommit>@(_AtomUISourceActualCommitOutput, '')</_AtomUISourceResolvedCommit>
+    </PropertyGroup>
+
+    <Error Condition="'$(AtomUISourceCommit)' != '' and '$(_AtomUISourceExpectedCommit)' != '$(_AtomUISourceResolvedCommit)'"
+           Text="AtomUI source commit mismatch. Expected '$(AtomUISourceCommit)' resolved to '$(_AtomUISourceExpectedCommit)' but found '$(_AtomUISourceResolvedCommit)' in '$(AtomUISourceRoot)'." />
+  </Target>
+
+  <Target Name="GenerateBuiltInSourceAnalysisSnapshots"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="EnsureAtomUISource;ValidateAtomUISourceIdentity">
     <MakeDir Directories="$(AtomUISourceAnalysisGeneratedRoot)" />
     <Exec Command="dotnet run --project &quot;$(AtomUICliRepoRoot)tools/AtomUI.Cli.MetadataBuilder/AtomUI.Cli.MetadataBuilder.csproj&quot; -- --source-root &quot;$(AtomUISourceRoot)&quot; --target-version &quot;$(AtomUITargetVersion)&quot; --source-ref &quot;$(AtomUISourceRef)&quot; --output-root &quot;$(AtomUISourceAnalysisGeneratedRoot)&quot;" />
     <ItemGroup>

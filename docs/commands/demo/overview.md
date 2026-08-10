@@ -244,7 +244,7 @@ dotnet atomui demo Button button-loading --code-only --code-language xaml
 
 - 示例内容只来自 documentation snapshot。
 - 不运行 Gallery。
-- 不读取 `../ReferenceProjects/AtomUI`。
+- 不读取 `<AtomUICliRepoRoot>/.workspace/AtomUI`。
 - 不扫描文件系统发现示例。
 - 不反射加载 AtomUI 控件程序集。
 - 商业示例通过显式 data-root 或商业数据模块贡献。

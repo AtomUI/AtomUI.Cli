@@ -581,7 +581,7 @@ CliCommandDispatcher
 
 - 示例数据只来自 documentation snapshot。
 - 不运行 Gallery。
-- 不读取 `../ReferenceProjects/AtomUI`。
+- 不读取 `<AtomUICliRepoRoot>/.workspace/AtomUI`。
 - 不扫描文件系统发现示例。
 - 不反射加载 AtomUI 控件程序集。
 - JSON payload DTO 必须兼容 source generated JSON 输出路径。

@@ -144,10 +144,9 @@ Handler 规则：
 
 输入源必须遵守命令设计标准中的源码根目录规则：
 
-1. `--source-root <path>`
-2. `AtomUIDocSourceRoot` MSBuild 属性
-3. `ATOMUI_SOURCE_ROOT` 环境变量
-4. 默认约定：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`
+1. `AtomUISourceRoot` MSBuild 属性或 `--source-root <path>`
+2. `ATOMUI_SOURCE_ROOT` 环境变量
+3. 默认约定：`<AtomUICliRepoRoot>/.workspace/AtomUI`
 
 构建期读取范围：
 

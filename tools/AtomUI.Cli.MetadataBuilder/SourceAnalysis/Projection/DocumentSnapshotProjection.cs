@@ -19,7 +19,7 @@ internal static class DocumentSnapshotProjection
             ? tokens
             : null;
         var source = new ExtractedDocumentSource(
-            "../ReferenceProjects/AtomUI",
+            ".workspace/AtomUI",
             context.Identity.SourceRef,
             context.Identity.SourceCommit,
             DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));

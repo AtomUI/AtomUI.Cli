@@ -4,7 +4,7 @@ using AtomUI.Cli.Hosting.Commercial;
 using AtomUI.Cli.Hosting.Errors;
 using AtomUI.Cli.Hosting.Mcp;
 using AtomUI.Cli.Hosting.Metadata;
-using AtomUI.Cli.Hosting.Output;
+using AtomUI.Cli.Hosting.Presentation;
 using AtomUI.Cli.Hosting.ProjectAnalysis;
 using AtomUI.Cli.Hosting.Setup;
 using AtomUI.Modularity;

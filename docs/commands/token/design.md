@@ -283,16 +283,15 @@ AtomUI source root
 
 ### 9.3 源码根解析
 
-默认引用源码位置遵守项目标准：`../ReferenceProjects/AtomUI`。CI 使用同样相对路径或通过显式参数覆盖。
+默认引用源码位置遵守项目标准：`<AtomUICliRepoRoot>/.workspace/AtomUI`。CI 使用同样相对路径或通过显式参数覆盖。
 
 源码根解析优先级：
 
-1. `AtomUITokenSourceRoot` MSBuild 属性或 MetadataBuilder 的 `--source-root`。
-2. `AtomUIDocSourceRoot` MSBuild 属性。
-3. `ATOMUI_SOURCE_ROOT` 环境变量。
-4. `<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+1. `AtomUISourceRoot` MSBuild 属性或 MetadataBuilder 的 `--source-root`。
+2. `ATOMUI_SOURCE_ROOT` 环境变量。
+3. `<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
-缺失源码根时构建失败，错误信息必须提示配置 `--source-root`、`AtomUIDocSourceRoot` 或 `ATOMUI_SOURCE_ROOT`。源码根路径不得写入命令输出，snapshot 中只能记录相对源码路径和 `sourceCommit`。
+缺失源码根时构建失败，错误信息必须提示配置 `--source-root` 或 `ATOMUI_SOURCE_ROOT`。源码根路径不得写入命令输出，snapshot 中只能记录相对源码路径和 `sourceCommit`。
 
 ### 9.4 字段权威来源
 

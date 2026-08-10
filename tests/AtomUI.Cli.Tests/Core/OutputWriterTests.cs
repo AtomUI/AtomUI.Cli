@@ -1,5 +1,5 @@
 using AtomUI.Cli;
-using AtomUI.Cli.Hosting.Output;
+using AtomUI.Cli.Hosting.Presentation;
 using Xunit;
 
 namespace AtomUI.Cli.Tests.Core;

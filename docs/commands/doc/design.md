@@ -346,7 +346,7 @@ CliCommandDispatcher
 10. `--format markdown` 输出 markdown renderer 结果。
 11. `--format text` 输出纯文本 renderer 结果。
 
-运行时不得从 `../ReferenceProjects/AtomUI` 或任何源码目录读取文档。该路径只用于构建期生成快照。
+运行时不得从 `<AtomUICliRepoRoot>/.workspace/AtomUI` 或任何源码目录读取文档。该路径只用于构建期生成快照。
 
 ## 9. 领域服务契约
 
@@ -803,10 +803,9 @@ public sealed record DocSuggestionPayload(
 
 documentation snapshot 在构建期生成。构建期源码根目录解析必须遵守 [命令设计标准](../command-design-standard.md) 中的构建期源码输入标准：
 
-1. `--source-root <path>`。
-2. `AtomUIDocSourceRoot` MSBuild 属性。
-3. `ATOMUI_SOURCE_ROOT` 环境变量。
-4. 默认约定路径：`<AtomUICliRepoRoot>/../ReferenceProjects/AtomUI`。
+1. `AtomUISourceRoot` MSBuild 属性或 `--source-root <path>`。
+2. `ATOMUI_SOURCE_ROOT` 环境变量。
+3. 默认约定路径：`<AtomUICliRepoRoot>/.workspace/AtomUI`。
 
 构建期工具只消费已存在的源码目录，不自动 clone、pull 或 checkout。Release 构建必须校验源码 commit 与锁文件一致，并把 source ref、source commit、target version、snapshot schema version 和 generated at 写入快照。
 
